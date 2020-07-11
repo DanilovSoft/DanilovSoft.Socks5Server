@@ -1,0 +1,42 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30225.117
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DanilovSoft.Socks5Server", "DanilovSoft.Socks5Server\DanilovSoft.Socks5Server.csproj", "{5DA0C0BB-79E2-4D9A-A8C9-E99F77C2047A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{0A7E54C4-6915-41C9-9E79-78BA76CA93FB}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SOCKS5Server", "SOCKS5Server\SOCKS5Server.csproj", "{2159C37D-06D4-45A6-8B63-795D098FAA0B}"
+EndProject
+Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "docker-compose.dcproj", "{AAA30087-3AA1-4206-A0AA-B28C72FC03A9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5DA0C0BB-79E2-4D9A-A8C9-E99F77C2047A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5DA0C0BB-79E2-4D9A-A8C9-E99F77C2047A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5DA0C0BB-79E2-4D9A-A8C9-E99F77C2047A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5DA0C0BB-79E2-4D9A-A8C9-E99F77C2047A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2159C37D-06D4-45A6-8B63-795D098FAA0B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2159C37D-06D4-45A6-8B63-795D098FAA0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2159C37D-06D4-45A6-8B63-795D098FAA0B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2159C37D-06D4-45A6-8B63-795D098FAA0B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AAA30087-3AA1-4206-A0AA-B28C72FC03A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AAA30087-3AA1-4206-A0AA-B28C72FC03A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AAA30087-3AA1-4206-A0AA-B28C72FC03A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AAA30087-3AA1-4206-A0AA-B28C72FC03A9}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C1D52734-5F7E-4A04-A8DD-24907A9764F9}
+	EndGlobalSection
+EndGlobal

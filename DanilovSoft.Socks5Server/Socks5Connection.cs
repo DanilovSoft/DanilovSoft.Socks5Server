@@ -50,7 +50,7 @@ namespace DanilovSoft.Socks5Server
                             return; // Обрав соединения.
 
                         loginPassword = await Socks5LoginPassword.ReceiveAsync(_managedTcp, rentedBuffer).ConfigureAwait(false);
-                        if (loginPassword == default)
+                        if (!loginPassword.IsInitialized)
                             return; // Обрав соединения.
 
                         var authResult = new Socks5AuthResult(rentedBuffer, allow: true);
@@ -91,7 +91,6 @@ namespace DanilovSoft.Socks5Server
                                     {
                                         // Подключиться к запрошенному адресу через ноду.
                                         TcpConnectResult connectTcpResult = await ConnectAsync(in socksRequest).ConfigureAwait(false);
-                                        ManagedTcpSocket? toDispose = connectTcpResult.Socket;
                                         try
                                         {
                                             if (connectTcpResult.SocketError == SocketError.Success)
@@ -102,8 +101,8 @@ namespace DanilovSoft.Socks5Server
                                                 var ip = (IPEndPoint)connectTcpResult.Socket.Client.RemoteEndPoint;
 
                                                 // Отвечаем клиенту по SOKCS что всё ОК.
-                                                var resp = new Socks5Response(ResponseCode.RequestSuccess, ip.Address);
-                                                SocketError socErr = await SendResponseAsync(resp, rentedBuffer).ConfigureAwait(false);
+                                                var response = new Socks5Response(ResponseCode.RequestSuccess, ip.Address);
+                                                SocketError socErr = await SendResponseAsync(in response, rentedBuffer).ConfigureAwait(false);
                                                 if (socErr != SocketError.Success)
                                                     return; // Обрыв.
 
@@ -112,9 +111,6 @@ namespace DanilovSoft.Socks5Server
 
                                                 //ConnectionOpened?.Invoke(this, loginPassword.Login);
                                                 
-                                                // Предотвратить Dispose.
-                                                toDispose = null;
-
                                                 await RunProxyAsync(_managedTcp, connectTcpResult.Socket).ConfigureAwait(false);
 
                                                 //ConnectionClosed?.Invoke(this, loginPassword.Login);
@@ -128,7 +124,7 @@ namespace DanilovSoft.Socks5Server
                                         }
                                         finally
                                         {
-                                            toDispose?.Dispose();
+                                            connectTcpResult.Dispose();
                                         }
                                     }
                                     catch (Exception ex)
@@ -170,15 +166,12 @@ namespace DanilovSoft.Socks5Server
         }
 
         /// <remarks>Не бросает исключения.</remarks>
-        private static async ValueTask RunProxyAsync(ManagedTcpSocket thisSocket, ManagedTcpSocket remoteSocket)
+        private static Task RunProxyAsync(ManagedTcpSocket thisSocket, ManagedTcpSocket remoteSocket)
         {
-            using (remoteSocket)
-            {
-                var task1 = Task.Run(() => ProxyAsync(thisSocket, remoteSocket));
-                var task2 = Task.Run(() => ProxyAsync(remoteSocket, thisSocket));
+            var task1 = Task.Run(() => ProxyAsync(thisSocket, remoteSocket));
+            var task2 = Task.Run(() => ProxyAsync(remoteSocket, thisSocket));
 
-                await Task.WhenAll(task1, task2).ConfigureAwait(false);
-            }
+            return Task.WhenAll(task1, task2);
         }
 
         private static async Task ProxyAsync(ManagedTcpSocket socketFrom, ManagedTcpSocket socketTo)
@@ -356,7 +349,7 @@ namespace DanilovSoft.Socks5Server
             };
 
             var errResp = new Socks5Response(code, IPAddress.Any);
-            SocketError socErr = await SendResponseAsync(errResp, buffer).ConfigureAwait(false);
+            SocketError socErr = await SendResponseAsync(in errResp, buffer).ConfigureAwait(false);
             if (socErr == SocketError.Success)
             {
                 await WaitForDisconnectAsync(buffer).ConfigureAwait(false);
@@ -366,7 +359,7 @@ namespace DanilovSoft.Socks5Server
         private async ValueTask SendConnectionRefusedAndDisconnectAsync(Memory<byte> buffer)
         {
             var errResp = new Socks5Response(ResponseCode.ConnectionRefused, IPAddress.Any);
-            SocketError socErr = await SendResponseAsync(errResp, buffer).ConfigureAwait(false);
+            SocketError socErr = await SendResponseAsync(in errResp, buffer).ConfigureAwait(false);
             if (socErr == SocketError.Success)
             {
                 await WaitForDisconnectAsync(buffer).ConfigureAwait(false);
@@ -386,7 +379,7 @@ namespace DanilovSoft.Socks5Server
             }
         }
 
-        private ValueTask<SocketError> SendResponseAsync(Socks5Response socksResponse, Memory<byte> buffer)
+        private ValueTask<SocketError> SendResponseAsync(in Socks5Response socksResponse, Memory<byte> buffer)
         {
             Memory<byte> span = socksResponse.Write(buffer);
             return _managedTcp.SendAsync(span);

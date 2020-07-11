@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -14,7 +15,7 @@ namespace DanilovSoft.Socks5Server
     /// Максимальный размер 262 байт.
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
-    internal readonly struct Socks5Request : IEquatable<Socks5Request>
+    internal readonly struct Socks5Request
     {
         public const int MaximumSize = 262;
         public bool IsEmpty => (IPAddress == null && DomainName == null);
@@ -33,8 +34,8 @@ namespace DanilovSoft.Socks5Server
             Debug.Assert(buffer.Length >= MaximumSize);
 
             // Как минимум должно быть 4 байта.
-            SocketReceiveResult socErr = await managedTcp.ReceiveBlockAsync(buffer.Slice(0, 4)).ConfigureAwait(false);
-            if (socErr.Count == 0)
+            SocketReceiveResult rcvResult = await managedTcp.ReceiveBlockAsync(buffer.Slice(0, 4)).ConfigureAwait(false);
+            if (!rcvResult.ReceiveSuccess)
                 return default;
 
             byte version = buffer.Span[0];
@@ -62,8 +63,8 @@ namespace DanilovSoft.Socks5Server
                 case AddressType.IPv4:
                     {
                         Memory<byte> ipv4span = buffer.Slice(0, 4);
-                        socErr = await managedTcp.ReceiveBlockAsync(ipv4span).ConfigureAwait(false);
-                        if (socErr.Count == 0)
+                        rcvResult = await managedTcp.ReceiveBlockAsync(ipv4span).ConfigureAwait(false);
+                        if (!rcvResult.ReceiveSuccess)
                             return default;
 
                         ipAddress = new IPAddress(ipv4span.ToArray());
@@ -76,8 +77,8 @@ namespace DanilovSoft.Socks5Server
                 case AddressType.DomainName:
                     {
                         // 1 байт с длиной строки.
-                        socErr = await managedTcp.ReceiveAsync(buffer.Slice(0, 1)).ConfigureAwait(false);
-                        if (socErr.Count == 0)
+                        rcvResult = await managedTcp.ReceiveAsync(buffer.Slice(0, 1)).ConfigureAwait(false);
+                        if (!rcvResult.ReceiveSuccess)
                             return default;
 
                         // Размер строки в байтах.
@@ -86,8 +87,8 @@ namespace DanilovSoft.Socks5Server
                         Memory<byte> hostSpan = buffer.Slice(1, strLen);
 
                         // Читаем всю строку.
-                        socErr = await managedTcp.ReceiveBlockAsync(hostSpan).ConfigureAwait(false);
-                        if (socErr.Count == 0)
+                        rcvResult = await managedTcp.ReceiveBlockAsync(hostSpan).ConfigureAwait(false);
+                        if (!rcvResult.ReceiveSuccess)
                             return default;
 
                         domainName = Encoding.ASCII.GetString(buffer.Slice(1, strLen).Span);
@@ -100,8 +101,8 @@ namespace DanilovSoft.Socks5Server
                 case AddressType.IPv6:
                     {
                         Memory<byte> ipv6span = buffer.Slice(0, 16);
-                        socErr = await managedTcp.ReceiveBlockAsync(ipv6span).ConfigureAwait(false);
-                        if (socErr.Count == 0)
+                        rcvResult = await managedTcp.ReceiveBlockAsync(ipv6span).ConfigureAwait(false);
+                        if (!rcvResult.ReceiveSuccess)
                             return default;
 
                         ipAddress = new IPAddress(ipv6span.ToArray());
@@ -117,26 +118,13 @@ namespace DanilovSoft.Socks5Server
 
             // Последний сегмент — 2 байта, номер порта.
             Memory<byte> portSpan = buffer.Slice(0, 2);
-            socErr = await managedTcp.ReceiveBlockAsync(portSpan).ConfigureAwait(false);
-            if (socErr.Count == 0)
+            rcvResult = await managedTcp.ReceiveBlockAsync(portSpan).ConfigureAwait(false);
+            if (!rcvResult.ReceiveSuccess)
                 return default;
 
             var port = (ushort)((portSpan.Span[0] << 8) | portSpan.Span[1]);
 
             return new Socks5Request(command, address, ipAddress, domainName, port);
-        }
-
-        public bool Equals(Socks5Request other)
-        {
-            if (IPAddress == null && DomainName == null
-                && other.IPAddress == null && other.DomainName == null)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
         }
 
         private Socks5Request(Socks5Command command, AddressType address, IPAddress? ipAddress, string? domainName, ushort port)
@@ -212,26 +200,6 @@ namespace DanilovSoft.Socks5Server
             IPAddress = default;
             DomainName = default;
             Port = default;
-        }
-
-        public static bool operator ==(in Socks5Request left, in Socks5Request right)
-        {
-            return left.Equals(right);
-        }
-
-        public static bool operator !=(in Socks5Request left, in Socks5Request right)
-        {
-            return !(left == right);
-        }
-
-        public override bool Equals(object? obj)
-        {
-            return obj is Socks5Request request && Equals(request);
-        }
-
-        public override int GetHashCode()
-        {
-            return HashCode.Combine(IPAddress, DomainName);
         }
     }
 }

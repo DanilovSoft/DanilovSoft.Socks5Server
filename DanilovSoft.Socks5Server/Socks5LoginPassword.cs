@@ -18,11 +18,11 @@ namespace DanilovSoft.Socks5Server
     /// +----+------+----------+------+----------+
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
-    internal readonly struct Socks5LoginPassword : IEquatable<Socks5LoginPassword>
+    internal readonly struct Socks5LoginPassword
     {
         public const int MaximumSize = 513;
 
-        private readonly bool IsInitialized;
+        public readonly bool IsInitialized;
         public readonly string? Login;
         public readonly string? Password;
 
@@ -30,8 +30,8 @@ namespace DanilovSoft.Socks5Server
         {
             Debug.Assert(buffer.Length >= MaximumSize);
 
-            SocketReceiveResult socErr = await managedTcp.ReceiveAsync(buffer).ConfigureAwait(false);
-            if (socErr.Count == 0)
+            SocketReceiveResult rcvResult = await managedTcp.ReceiveAsync(buffer).ConfigureAwait(false);
+            if (!rcvResult.ReceiveSuccess)
                 return default;
 
             byte version = buffer.Span[0];
@@ -50,36 +50,11 @@ namespace DanilovSoft.Socks5Server
             return new Socks5LoginPassword(login, password);
         }
 
-        public bool Equals([AllowNull] Socks5LoginPassword other)
-        {
-            return other.IsInitialized == IsInitialized;
-        }
-
         public Socks5LoginPassword(string login, string password)
         {
             Login = login;
             Password = password;
             IsInitialized = true;
-        }
-
-        public override bool Equals(object? obj)
-        {
-            return obj is Socks5LoginPassword password && Equals(password);
-        }
-
-        public override int GetHashCode()
-        {
-            return IsInitialized.GetHashCode();
-        }
-
-        public static bool operator ==(Socks5LoginPassword left, Socks5LoginPassword right)
-        {
-            return left.Equals(right);
-        }
-
-        public static bool operator !=(Socks5LoginPassword left, Socks5LoginPassword right)
-        {
-            return !(left == right);
         }
     }
 }

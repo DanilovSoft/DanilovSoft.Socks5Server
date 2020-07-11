@@ -19,6 +19,10 @@ namespace System.Net
     {
         public readonly int Count;
         public readonly SocketError SocketError;
+        /// <summary>
+        /// Когда Count > 0 И SocketError.Success.
+        /// </summary>
+        public bool ReceiveSuccess => Count > 0 && SocketError == SocketError.Success;
 
         [DebuggerStepThrough]
         public SocketReceiveResult(int count, SocketError errorCode)

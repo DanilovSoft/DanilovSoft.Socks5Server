@@ -58,8 +58,8 @@ namespace DanilovSoft.Socks5Server
             Debug.Assert(buffer.Length >= MaximumSize);
 
             // Как минимум должно быть 2 байта.
-            SocketReceiveResult socErr = await managedTcp.ReceiveBlockAsync(buffer.Slice(0, 2)).ConfigureAwait(false);
-            if (socErr.Count == 0)
+            SocketReceiveResult rcvResult = await managedTcp.ReceiveBlockAsync(buffer.Slice(0, 2)).ConfigureAwait(false);
+            if (!rcvResult.ReceiveSuccess)
                 return new Socks5AuthRequest(authMethods: null);
 
             byte version = buffer.Span[0];
@@ -72,8 +72,8 @@ namespace DanilovSoft.Socks5Server
             // Номера методов аутентификации, переменная длина, 1 байт для каждого поддерживаемого метода.
             Memory<byte> authSpan = buffer.Slice(2, authCount);
 
-            socErr = await managedTcp.ReceiveBlockAsync(authSpan).ConfigureAwait(false);
-            if (socErr.Count == 0)
+            rcvResult = await managedTcp.ReceiveBlockAsync(authSpan).ConfigureAwait(false);
+            if (!rcvResult.ReceiveSuccess)
                 return new Socks5AuthRequest(authMethods: null);
 
             var authMethods = new Socks5AuthMethod[authSpan.Length];

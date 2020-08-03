@@ -14,7 +14,7 @@ namespace DanilovSoft.Socks5Server
     internal sealed class Socks5Connection : IDisposable
     {
         private const int Socks5MinSizeRequest = 515;
-        private const int ProxyBufferSize = 4096;
+        //private const int ProxyBufferSize = 4096;
 
         private readonly ManagedTcpSocket _managedTcp;
         //public event EventHandler<string?>? ConnectionOpened;
@@ -32,7 +32,7 @@ namespace DanilovSoft.Socks5Server
         public async Task ProcessRequestsAsync()
         {
             Socks5LoginPassword loginPassword = default;
-            IMemoryOwner<byte> rentedMem = MemoryPool<byte>.Shared.Rent(ProxyBufferSize);
+            IMemoryOwner<byte> rentedMem = MemoryPool<byte>.Shared.Rent(4096);
             IMemoryOwner<byte>? rentedMemToDispose = rentedMem;
             Memory<byte> rentedBuffer = rentedMem.Memory;
 
@@ -168,82 +168,8 @@ namespace DanilovSoft.Socks5Server
         /// <remarks>Не бросает исключения.</remarks>
         private static Task RunProxyAsync(ManagedTcpSocket thisSocket, ManagedTcpSocket remoteSocket)
         {
-            var task1 = Task.Run(() => ProxyAsync(thisSocket, remoteSocket));
-            var task2 = Task.Run(() => ProxyAsync(remoteSocket, thisSocket));
-
-            return Task.WhenAll(task1, task2);
-        }
-
-        private static async Task ProxyAsync(ManagedTcpSocket socketFrom, ManagedTcpSocket socketTo)
-        {
-            // Арендуем память на длительное время(!).
-            // TO TNINK возможно лучше создать свой пул что-бы не истощить общий 
-            // в случае когда мы не одни его используем.
-            using (var rent = MemoryPool<byte>.Shared.Rent(ProxyBufferSize))
-            {
-                while (true)
-                {
-                    SocketReceiveResult result;
-                    try
-                    {
-                        result = await socketFrom.ReceiveAsync(rent.Memory).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        try
-                        {
-                            socketTo.Client.Shutdown(SocketShutdown.Send);
-                        }
-                        catch { }
-                        return;
-                    }
-
-                    if (result.Count > 0 && result.SocketError == SocketError.Success)
-                    {
-                        SocketError socketError;
-                        try
-                        {
-                            socketError = await socketTo.SendAsync(rent.Memory.Slice(0, result.Count)).ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                            try
-                            {
-                                // Закрываем приём у противоположного сокета.
-                                socketFrom.Client.Shutdown(SocketShutdown.Receive);
-                            }
-                            catch { }
-                            return;
-                        }
-
-                        if (socketError == SocketError.Success)
-                        {
-                            continue;
-                        }
-                        else
-                        // Принимающий сокет закрылся.
-                        {
-                            try
-                            {
-                                // Закрываем приём у противоположного сокета.
-                                socketFrom.Client.Shutdown(SocketShutdown.Receive);
-                            }
-                            catch { }
-                            return;
-                        }
-                    }
-                    else
-                    // Соединение закрылось.
-                    {
-                        try
-                        {
-                            socketTo.Client.Shutdown(SocketShutdown.Send);
-                        }
-                        catch { }
-                        return;
-                    }
-                }
-            }
+            var p = new Proxy(thisSocket, remoteSocket);
+            return p.RunAsync();
         }
 
         private static Task<TcpConnectResult> ConnectAsync(in Socks5Request socksRequest)

@@ -42,7 +42,7 @@ namespace System.Net
                     return _receiveArgs.ReceiveAsync(_socket, buffer, cancellationToken);
                 }
                 else
-                    throw ThrowSimultaneouslyOperationException();
+                    return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
             }
             else
                 return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
@@ -59,7 +59,7 @@ namespace System.Net
                     return _sendArgs.SendAsync(_socket, buffer, cancellationToken);
                 }
                 else
-                    throw ThrowSimultaneouslyOperationException();
+                    return new ValueTask<SocketError>(task: Task.FromException<SocketError>(SimultaneouslyOperationException()));
             }
             else
                 return new ValueTask<SocketError>(Task.FromCanceled<SocketError>(cancellationToken));
@@ -173,7 +173,7 @@ namespace System.Net
                     return _sendArgs.SendAsync(_socket, buffer, offset, count, cancellationToken);
                 }
                 else
-                    throw ThrowSimultaneouslyOperationException();
+                    return new ValueTask<SocketError>(task: Task.FromException<SocketError>(SimultaneouslyOperationException()));
             }
             else
                 return new ValueTask<SocketError>(Task.FromCanceled<SocketError>(cancellationToken));
@@ -188,7 +188,7 @@ namespace System.Net
                     return _receiveArgs.ReceiveAsync(_socket, buffer, offset, count, cancellationToken);
                 }
                 else
-                    throw ThrowSimultaneouslyOperationException();
+                    return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
             }
             else
                 return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
@@ -206,7 +206,7 @@ namespace System.Net
             if (!saea.Reserve())
             {
                 Debug.Assert(false);
-                throw ThrowSimultaneouslyOperationException();
+                return Task.FromException<SocketError>(SimultaneouslyOperationException());
                 //saea = new AwaitableSocketAsyncEventArgs();
                 //saea.Reserve();
             }
@@ -571,7 +571,7 @@ namespace System.Net
                 => throw new InvalidOperationException("Multiple continuations not allowed.");
         }
 
-        private static InvalidOperationException ThrowSimultaneouslyOperationException()
+        private static InvalidOperationException SimultaneouslyOperationException()
                 => new InvalidOperationException("Operation already in progress.");
     }
 }

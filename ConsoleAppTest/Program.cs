@@ -19,13 +19,13 @@ namespace ConsoleAppTest
 
             ThreadPool.QueueUserWorkItem(delegate 
             {
-                var buf = new byte[1024];
+                var buf = new byte[] { 1, 2, 3 };
                 while (true)
                 {
                     //Thread.Sleep(4000);
 
-                    var result = mCli1.ReceiveAsync(buf).AsTask().Result;
-                    if (result.Count == 0 && result.SocketError == SocketError.Success)
+                    SocketError result = mCli1.SendAsync(buf).AsTask().Result;
+                    if (result != SocketError.Success)
                     {
                         break;
                     }
@@ -36,12 +36,15 @@ namespace ConsoleAppTest
 
             Thread.Sleep(2000);
 
-            cli2.Client.Send(new byte[] { 1,2,3 });
+            byte[] buf = new byte[1024];
+            cli2.Client.Shutdown(SocketShutdown.Receive);
+            int n = cli2.Client.Receive(buf);
+
             //cli2.Client.Shutdown(SocketShutdown.Send);
 
             //cli2.LingerState = new LingerOption(enable: true, seconds: 0); // Альтернативный способ + Close без таймаута.
 
-            cli2.Client.Close(timeout: 0); // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
+            //cli2.Client.Close(timeout: 0); // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
 
             Thread.Sleep(-1);
         }

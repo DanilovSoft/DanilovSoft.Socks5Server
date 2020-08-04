@@ -49,36 +49,28 @@ namespace DanilovSoft.Socks5Server
             {
                 while (true)
                 {
-                    SocketReceiveResult result;
+                    SocketReceiveResult receiveResult;
                     try
                     {
-                        result = await socketFrom.ReceiveAsync(rent.Memory).ConfigureAwait(false);
+                        receiveResult = await socketFrom.ReceiveAsync(rent.Memory).ConfigureAwait(false);
                     }
                     catch
                     {
-                        try
-                        {
-                            socketTo.Client.Shutdown(SocketShutdown.Send);
-                        }
-                        catch { }
+                        ShutdownSend(socketTo); // Отправлять в этот сокет больше не будем.
                         return;
                     }
 
-                    if (result.Count > 0 && result.SocketError == SocketError.Success)
+                    if (receiveResult.Count > 0 && receiveResult.SocketError == SocketError.Success)
                     {
                         SocketError sendError;
                         try
                         {
-                            sendError = await socketTo.SendAsync(rent.Memory.Slice(0, result.Count)).ConfigureAwait(false);
+                            sendError = await socketTo.SendAsync(rent.Memory.Slice(0, receiveResult.Count)).ConfigureAwait(false);
                         }
                         catch
                         {
-                            try
-                            {
-                                // Закрываем приём у противоположного сокета.
-                                socketFrom.Client.Shutdown(SocketShutdown.Receive);
-                            }
-                            catch { }
+                            // Другая сторона получит RST если что-то пришлёт.
+                            ShutdownReceive(socketFrom); // Читать из этого сокета больше не будем.
                             return;
                         }
 
@@ -87,48 +79,71 @@ namespace DanilovSoft.Socks5Server
                             continue;
                         }
                         else
-                        // Принимающий сокет закрылся.
+                        // Сокет не принял данные.
                         {
-                            try
-                            {
-                                // Закрываем приём у противоположного сокета.
-                                socketFrom.Client.Shutdown(SocketShutdown.Receive);
-                            }
-                            catch { }
+                            // Другая сторона получит RST если что-то пришлёт.
+                            ShutdownReceive(socketFrom); // Читать из этого сокета больше не будем.
                             return;
                         }
                     }
                     else
-                    // Соединение закрылось.
+                    // Не удалось прочитать из сокета.
                     {
-                        if (result.Count == 0 && result.SocketError == SocketError.Success)
+                        if (receiveResult.Count == 0 && receiveResult.SocketError == SocketError.Success)
                         // Грациозное закрытие.
                         {
-                            try
-                            {
-                                socketTo.Client.Shutdown(SocketShutdown.Send);
-                            }
-                            catch { }
+                            ShutdownSend(socketTo); // Отправлять в этот сокет больше не будем.
+                            return;
                         }
                         else
                         // Случился грязный обрыв.
                         {
                             // Нужно закрыть соединение так что-бы на другой стороне тоже получился грязный обрыв, 
                             // иначе другая сторона может решить что все данные успешно приняты.
-                            try
-                            {
-                                // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
-                                socketTo.Client.Close(timeout: 0);
-
-                                // Альтернативный способ + Close без таймаута.
-                                //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
-                            }
-                            catch { }
+                            AbortConnection(socketTo);
+                            return;
                         }
-                        return;
                     }
                 }
             }
+        }
+
+        private static void AbortConnection(ManagedTcpSocket socket)
+        {
+            try
+            {
+                // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
+                socket.Client.Close(timeout: 0);
+
+                // Альтернативный способ + Close без таймаута.
+                //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Соединение завершается, если после вызова Shutdown выполняется одно из следующих условий:
+        /// <list type="bullet">
+        /// <item>Данные находятся в входящем сетевом буфере, ожидающем получения.</item>
+        /// <item>Получены дополнительные данные.</item>
+        /// </list>
+        /// </summary>
+        private static void ShutdownReceive(ManagedTcpSocket socket)
+        {
+            try
+            {
+                socket.Client.Shutdown(SocketShutdown.Receive);
+            }
+            catch { }
+        }
+
+        private static void ShutdownSend(ManagedTcpSocket socket)
+        {
+            try
+            {
+                socket.Client.Shutdown(SocketShutdown.Send);
+            }
+            catch { }
         }
     }
 }

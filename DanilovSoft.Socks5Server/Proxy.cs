@@ -26,8 +26,8 @@ namespace DanilovSoft.Socks5Server
 
         public Task RunAsync()
         {
-            var task1 = Task.Factory.StartNew(ProxyAsync, (_socketA, _socketB), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
-            var task2 = Task.Factory.StartNew(ProxyAsync, (_socketB, _socketA), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
+            Task task1 = Task.Factory.StartNew(ProxyAsync, (_socketA, _socketB), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
+            Task task2 = Task.Factory.StartNew(ProxyAsync, (_socketB, _socketA), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
 
             return Task.WhenAll(task1, task2);
         }
@@ -35,9 +35,8 @@ namespace DanilovSoft.Socks5Server
         private static Task ProxyAsync(object? state)
         {
             Debug.Assert(state != null);
-            (ManagedTcpSocket socket1, ManagedTcpSocket socket2) = ((ManagedTcpSocket, ManagedTcpSocket))state;
-
-            return ProxyAsync(socket1, socket2);
+            var a = ((ManagedTcpSocket socket1, ManagedTcpSocket socket2))state;
+            return ProxyAsync(a.socket1, a.socket2);
         }
 
         private static async Task ProxyAsync(ManagedTcpSocket socketFrom, ManagedTcpSocket socketTo)

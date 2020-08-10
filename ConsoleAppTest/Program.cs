@@ -16,6 +16,7 @@ namespace ConsoleAppTest
             TcpClient cli1 = new TcpClient("127.0.0.1", 1234);
             var mCli1 = new ManagedTcpSocket(cli1.Client);
             TcpClient cli2 = listener.AcceptTcpClient();
+            var mCli2 = new ManagedTcpSocket(cli2.Client);
 
             ThreadPool.QueueUserWorkItem(delegate 
             {
@@ -24,11 +25,11 @@ namespace ConsoleAppTest
                 {
                     //Thread.Sleep(4000);
 
-                    SocketError result = mCli1.SendAsync(buf).AsTask().Result;
-                    if (result != SocketError.Success)
-                    {
-                        break;
-                    }
+                    //SocketError result = mCli1.SendAsync(buf).AsTask().Result;
+                    //if (result != SocketError.Success)
+                    //{
+                    //    break;
+                    //}
 
                     Thread.Sleep(500);
                 }
@@ -37,8 +38,10 @@ namespace ConsoleAppTest
             Thread.Sleep(2000);
 
             byte[] buf = new byte[1024];
+            var r = mCli1.SendAsync(buf).AsTask().Result;
+            var res = mCli2.ReceiveAsync(buf).AsTask().GetAwaiter().GetResult();
             cli2.Client.Shutdown(SocketShutdown.Receive);
-            int n = cli2.Client.Receive(buf);
+            var res2 = mCli2.ReceiveAsync(buf).AsTask().GetAwaiter().GetResult();
 
             //cli2.Client.Shutdown(SocketShutdown.Send);
 

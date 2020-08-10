@@ -6,9 +6,10 @@ namespace DanilovSoft.Socks5Server
     {
         static void Main()
         {
-            using (var listener = new Socks5Listener(1080))
+            const int port = 1080;
+            using (var listener = new Socks5Listener(port))
             {
-                Console.WriteLine("Running");
+                Console.WriteLine($"Port: {port}");
                 listener.ListenAsync(default).GetAwaiter().GetResult();
             }
         }

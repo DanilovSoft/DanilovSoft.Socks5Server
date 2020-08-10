@@ -88,7 +88,8 @@ namespace DanilovSoft.Socks5Server
                     else
                     // Не удалось прочитать из сокета.
                     {
-                        if (receiveResult.Count == 0 && receiveResult.SocketError == SocketError.Success)
+                        if (receiveResult.Count == 0 && receiveResult.SocketError == SocketError.Success
+                            || receiveResult.SocketError == SocketError.Shutdown)
                         // Грациозное закрытие.
                         {
                             ShutdownSend(socketTo); // Отправлять в этот сокет больше не будем.

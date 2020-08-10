@@ -21,7 +21,6 @@ namespace System.Net
         private readonly AwaitableSocketAsyncEventArgs _sendArgs;
         private readonly Socket _socket;
         public Socket Client => _socket;
-        //public event EventHandler? Disposed;
         private int _disposed;
 
         public ManagedTcpSocket(Socket socket)
@@ -215,13 +214,6 @@ namespace System.Net
             return saea.ConnectAsync(_socket).AsTask();
         }
 
-        //private static void Connection_Completed(object? sender, SocketAsyncEventArgs e)
-        //{
-        //    var tcs = (TaskCompletionSource<SocketError>)e.UserToken;
-        //    tcs.TrySetResult(e.SocketError);
-        //}
-
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ThrowIfDisposed()
         {
             if (_disposed == 0)
@@ -329,10 +321,12 @@ namespace System.Net
                     // Ждём пока прочитаются данные.
                     return new ValueTask<SocketReceiveResult>(this, _token);
                 }
+                else
+                {
+                    Release();
 
-                Release();
-
-                return new ValueTask<SocketReceiveResult>(new SocketReceiveResult(BytesTransferred, SocketError));
+                    return new ValueTask<SocketReceiveResult>(new SocketReceiveResult(BytesTransferred, SocketError));
+                }
             }
 
             internal ValueTask<SocketError> SendAsync(Socket socket, ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
@@ -352,10 +346,12 @@ namespace System.Net
                     // Ждём пока отправится.
                     return new ValueTask<SocketError>(this, _token);
                 }
+                else
+                {
+                    Release();
 
-                Release();
-
-                return new ValueTask<SocketError>(SocketError);
+                    return new ValueTask<SocketError>(SocketError);
+                }
             }
 
             internal ValueTask<SocketError> SendAsync(Socket socket, byte[] buffer, int offset, int count, CancellationToken cancellationToken)
@@ -370,10 +366,12 @@ namespace System.Net
                     // Ждём пока отправится.
                     return new ValueTask<SocketError>(this, _token);
                 }
+                else
+                {
+                    Release();
 
-                Release();
-
-                return new ValueTask<SocketError>(SocketError);
+                    return new ValueTask<SocketError>(SocketError);
+                }
             }
 
             internal ValueTask<SocketReceiveResult> ReceiveAsync(Socket socket, byte[] buffer, int offset, int count, CancellationToken cancellationToken)
@@ -391,6 +389,7 @@ namespace System.Net
                 // Операция выполнилась синхронно.
                 {
                     Release();
+
                     return new ValueTask<SocketReceiveResult>(new SocketReceiveResult(BytesTransferred, SocketError));
                 }
             }

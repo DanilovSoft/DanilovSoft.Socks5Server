@@ -22,68 +22,122 @@ namespace System.Net
         private readonly Socket _socket;
         public Socket Client => _socket;
         private int _disposed;
+        private bool IsDisposed => _disposed != 0;
 
         public ManagedTcpSocket(Socket socket)
         {
             _socket = socket;
+            //NoDelay = DefaultNoDelay;
+
             _receiveArgs = new AwaitableSocketAsyncEventArgs();
             _sendArgs = new AwaitableSocketAsyncEventArgs();
         }
 
+#if NETSTANDARD2_0 || NET46
+
+        /// <summary>
+        /// Использует MemoryMarshal.TryGetArray.
+        /// </summary>
+        /// <exception cref="ObjectDisposedException"/>
+        public ValueTask<SocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken)
+        {
+            if (MemoryMarshal.TryGetArray(buffer, out ArraySegment<byte> segment))
+            {
+                return InnerReceiveAsync(segment.Array, segment.Offset, segment.Count, cancellationToken);
+            }
+            else
+                throw new NotSupportedException(Resources.Strings.MemoryGetArray);
+        }
+
+        /// <summary>
+        /// Использует MemoryMarshal.TryGetArray.
+        /// </summary>
+        /// <exception cref="SocketException"/>
+        /// <exception cref="ObjectDisposedException"/>
+        public ValueTask<int> ReadAsync(Memory<byte> memory, CancellationToken cancellationToken)
+        {
+            if (MemoryMarshal.TryGetArray<byte>(memory, out var segment))
+            {
+                return ReadAsync(segment.Array, segment.Offset, segment.Count, cancellationToken);
+            }
+            else
+                throw new NotSupportedException(Resources.Strings.MemoryGetArray);
+        }
+
+        /// <summary>
+        /// Использует MemoryMarshal.TryGetArray.
+        /// </summary>
+        /// <exception cref="ObjectDisposedException"/>
+        public ValueTask<SocketError> SendAsync(ReadOnlyMemory<byte> memory, CancellationToken cancellationToken)
+        {
+            if (MemoryMarshal.TryGetArray(memory, out var segment))
+            {
+                return SendAsync(segment.Array, segment.Offset, segment.Count, cancellationToken);
+            }
+            else
+                throw new NotSupportedException(Resources.Strings.MemoryGetArray);
+        }
+#else
+        /// <exception cref="ObjectDisposedException"/>
         public ValueTask<SocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            ThrowIfDisposed();
-
-            if (!cancellationToken.IsCancellationRequested)
+            if (!IsDisposed)
             {
-                if (_receiveArgs.Reserve())
+                if (!cancellationToken.IsCancellationRequested)
                 {
-                    return _receiveArgs.ReceiveAsync(_socket, buffer, cancellationToken);
+                    if (_receiveArgs.Reserve())
+                    {
+                        return _receiveArgs.ReceiveAsync(_socket, buffer);
+                    }
+                    else
+                        return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
                 }
                 else
-                    return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
+                    return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
             }
             else
-                return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
+                return DisposedValueTask<SocketReceiveResult>();
         }
 
+        /// <exception cref="ObjectDisposedException"/>
         public ValueTask<SocketError> SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            ThrowIfDisposed();
-
-            if (!cancellationToken.IsCancellationRequested)
+            if (!IsDisposed)
             {
-                if (_sendArgs.Reserve())
+                if (!cancellationToken.IsCancellationRequested)
                 {
-                    return _sendArgs.SendAsync(_socket, buffer, cancellationToken);
+                    if (_sendArgs.Reserve())
+                    {
+                        return _sendArgs.SendAsync(_socket, buffer);
+                    }
+                    else
+                        return new ValueTask<SocketError>(task: Task.FromException<SocketError>(SimultaneouslyOperationException()));
                 }
                 else
-                    return new ValueTask<SocketError>(task: Task.FromException<SocketError>(SimultaneouslyOperationException()));
+                    return new ValueTask<SocketError>(Task.FromCanceled<SocketError>(cancellationToken));
             }
             else
-                return new ValueTask<SocketError>(Task.FromCanceled<SocketError>(cancellationToken));
+                return DisposedValueTask<SocketError>();
         }
-
-        public ValueTask<SocketReceiveResult> ReceiveAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
+#endif
+        /// <exception cref="ObjectDisposedException"/>
+        public ValueTask<SocketReceiveResult> ReceiveAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
-            ThrowIfDisposed();
             return InnerReceiveAsync(buffer, offset, count, cancellationToken);
         }
 
         /// <exception cref="SocketException"/>
-        public ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        /// <exception cref="ObjectDisposedException"/>
+        public ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken)
         {
-            ThrowIfDisposed();
-
             ValueTask<SocketError> t = SendAsync(buffer, cancellationToken);
             if (t.IsCompletedSuccessfully)
             {
                 SocketError socErr = t.Result;
 
-                if (socErr == SocketError.Success)
-                    return new ValueTask();
-
-                return new ValueTask(Task.FromException(socErr.ToException()));
+                return socErr == SocketError.Success
+                    ? default
+                    : new ValueTask(Task.FromException(socErr.ToException()));
             }
             else
             {
@@ -96,23 +150,22 @@ namespace System.Net
                 if (socErr == SocketError.Success)
                     return;
 
-                ThrowHelper.ThrowException(socErr.ToException());
+                throw socErr.ToException();
             }
         }
 
         /// <exception cref="SocketException"/>
-        public ValueTask WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
+        /// <exception cref="ObjectDisposedException"/>
+        public ValueTask WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
-            ThrowIfDisposed();
-
             ValueTask<SocketError> t = SendAsync(buffer, offset, count, cancellationToken);
             if (t.IsCompletedSuccessfully)
             {
-                var socErr = t.Result;
-                if (socErr == SocketError.Success)
-                    return new ValueTask();
+                SocketError socErr = t.Result;
 
-                return new ValueTask(Task.FromException(socErr.ToException()));
+                return socErr == SocketError.Success
+                    ? default
+                    : new ValueTask(Task.FromException(socErr.ToException()));
             }
             else
             {
@@ -133,18 +186,17 @@ namespace System.Net
         /// Бросает исключение если операция завершилась с кодом возврата отличным от Success.
         /// </summary>
         /// <exception cref="SocketException"/>
-        public ValueTask<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
+        /// <exception cref="ObjectDisposedException"/>
+        public ValueTask<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
-            ThrowIfDisposed();
-
             ValueTask<SocketReceiveResult> t = InnerReceiveAsync(buffer, offset, count, cancellationToken);
             if (t.IsCompletedSuccessfully)
             {
                 SocketReceiveResult result = t.Result;
-                if (result.SocketError == SocketError.Success)
-                    return new ValueTask<int>(result.Count);
 
-                return new ValueTask<int>(Task.FromException<int>(result.SocketError.ToException()));
+                return result.ErrorCode == SocketError.Success
+                    ? new ValueTask<int>(result.BytesReceived)
+                    : new ValueTask<int>(Task.FromException<int>(result.ErrorCode.ToException()));
             }
             else
             {
@@ -154,96 +206,102 @@ namespace System.Net
             static async ValueTask<int> WaitForReadAsync(ValueTask<SocketReceiveResult> t)
             {
                 SocketReceiveResult result = await t.ConfigureAwait(false);
-                if (result.SocketError == SocketError.Success)
-                    return result.Count;
+                if (result.ErrorCode == SocketError.Success)
+                    return result.BytesReceived;
 
-                throw result.SocketError.ToException();
+                throw result.ErrorCode.ToException();
             }
         }
 
+        /// <exception cref="ObjectDisposedException"/>
         public ValueTask<SocketError> SendAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
         {
-            ThrowIfDisposed();
-
-            if (!cancellationToken.IsCancellationRequested)
+            if (!IsDisposed)
             {
-                if (_sendArgs.Reserve())
+                if (!cancellationToken.IsCancellationRequested)
                 {
-                    return _sendArgs.SendAsync(_socket, buffer, offset, count, cancellationToken);
+                    if (_sendArgs.Reserve())
+                    {
+                        return _sendArgs.SendAsync(_socket, buffer, offset, count);
+                    }
+                    else
+                        return new ValueTask<SocketError>(task: Task.FromException<SocketError>(SimultaneouslyOperationException()));
                 }
                 else
-                    return new ValueTask<SocketError>(task: Task.FromException<SocketError>(SimultaneouslyOperationException()));
+                    return new ValueTask<SocketError>(Task.FromCanceled<SocketError>(cancellationToken));
             }
             else
-                return new ValueTask<SocketError>(Task.FromCanceled<SocketError>(cancellationToken));
+                return DisposedValueTask<SocketError>();
         }
 
+        /// <exception cref="ObjectDisposedException"/>
         private ValueTask<SocketReceiveResult> InnerReceiveAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
         {
-            if (!cancellationToken.IsCancellationRequested)
+            if (!IsDisposed)
             {
-                if (_receiveArgs.Reserve())
+                if (!cancellationToken.IsCancellationRequested)
                 {
-                    return _receiveArgs.ReceiveAsync(_socket, buffer, offset, count, cancellationToken);
+                    if (_receiveArgs.Reserve())
+                    {
+                        return _receiveArgs.ReceiveAsync(_socket, buffer, offset, count);
+                    }
+                    else
+                        return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
                 }
                 else
-                    return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
+                    return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
             }
             else
-                return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
+                return DisposedValueTask<SocketReceiveResult>();
         }
 
         /// <exception cref="ObjectDisposedException"/>
         public Task<SocketError> ConnectAsync(EndPoint endPoint)
         {
-            ThrowIfDisposed();
-
-            // Можем использовать слот чтения или отправки.
-            AwaitableSocketAsyncEventArgs saea = _receiveArgs;
-
-            // Слот должен быть свободен потому что подключение это самая первая операция (только для TCP).
-            if (!saea.Reserve())
+            if (!IsDisposed)
             {
-                Debug.Assert(false);
-                return Task.FromException<SocketError>(SimultaneouslyOperationException());
-                //saea = new AwaitableSocketAsyncEventArgs();
-                //saea.Reserve();
-            }
+                // Можем использовать слот чтения или отправки.
+                AwaitableSocketAsyncEventArgs saea = _sendArgs;
 
-            saea.RemoteEndPoint = endPoint;
-            return saea.ConnectAsync(_socket).AsTask();
-        }
+                // Слот должен быть свободен потому что подключение это самая первая операция (только для TCP).
+                if (!saea.Reserve())
+                {
+                    Debug.Assert(false);
+                    return Task.FromException<SocketError>(SimultaneouslyOperationException());
+                }
 
-        private void ThrowIfDisposed()
-        {
-            if (_disposed == 0)
-            {
-                return;
+                saea.RemoteEndPoint = endPoint;
+                return saea.ConnectAsync(_socket).AsTask();
             }
             else
-            {
-                ThrowHelper.ThrowObjectDisposedException(GetType().FullName);
-            }
+                return Task.FromException<SocketError>(DisposedException());
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private ValueTask<T> DisposedValueTask<T>() => new ValueTask<T>(Task.FromException<T>(DisposedException()));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private ObjectDisposedException DisposedException() => ThrowHelper.ObjectDisposedException(GetType().FullName);
+
+        /// <summary>
+        /// Атомарный.
+        /// </summary>
         public void Dispose()
         {
             if (Interlocked.CompareExchange(ref _disposed, 1, 0) == 0)
             {
-                //Disposed?.Invoke(this, EventArgs.Empty);
                 _receiveArgs.Dispose();
                 _sendArgs.Dispose();
+                _socket.Dispose();
             }
         }
 
-        // https://source.dot.net/#System.Net.Sockets/System/Net/Sockets/Socket.Tasks.cs,2bb049b54914ceee
         private sealed class AwaitableSocketAsyncEventArgs : SocketAsyncEventArgs, IValueTaskSource<SocketError>, IValueTaskSource<SocketReceiveResult>
         {
             /// <summary>Sentinel object used to indicate that the operation has completed prior to OnCompleted being called.</summary>
             private static readonly Action<object?> s_completedSentinel = new Action<object?>(state => throw new Exception(nameof(s_completedSentinel)));
             /// <summary>Sentinel object used to indicate that the instance is available for use.</summary>
             private static readonly Action<object?> s_availableSentinel = new Action<object?>(state => throw new Exception(nameof(s_availableSentinel)));
-            /// <summary>
             /// <summary>
             /// <see cref="s_availableSentinel"/> if the object is available for use, after GetResult has been called on a previous use.
             /// null if the operation has not completed.
@@ -254,27 +312,21 @@ namespace System.Net
             private Action<object?>? _continuation = s_availableSentinel;
             private ExecutionContext? _executionContext;
             private object? _scheduler;
-            /// <summary>Current token value given to a ValueTask and then verified against the value it passes back to us.</summary>
+            /// <summary>
+            /// Текущее значение токена отданное ValueTask'у которое затем будет сравнено со значением переданным нам обратно.
+            /// </summary>
             /// <remarks>
-            /// This is not meant to be a completely reliable mechanism, doesn't require additional synchronization, etc.
-            /// It's purely a best effort attempt to catch misuse, including awaiting for a value task twice and after
-            /// it's already being reused by someone else.
+            /// Это не обеспечивает абсолютную синхронизацию, а даёт превентивную защиту от неправильного
+            /// использования ValueTask, таких как многократное ожидание и обращение к уже использованому прежде.
             /// </remarks>
             private short _token;
 
-            public AwaitableSocketAsyncEventArgs()
+            public AwaitableSocketAsyncEventArgs() : base()
             {
 
             }
 
-            public bool Reserve() =>
-                ReferenceEquals(Interlocked.CompareExchange(ref _continuation, null, s_availableSentinel), s_availableSentinel);
-
-            private void Release()
-            {
-                _token++;
-                Volatile.Write(ref _continuation, s_availableSentinel);
-            }
+            internal bool Reserve() => ReferenceEquals(Interlocked.CompareExchange(ref _continuation, null, s_availableSentinel), s_availableSentinel);
 
             protected override void OnCompleted(SocketAsyncEventArgs _)
             {
@@ -303,14 +355,17 @@ namespace System.Net
                         _executionContext = null;
                         ExecutionContext.Run(ec, runState =>
                         {
-                            var t = (Tuple<AwaitableSocketAsyncEventArgs, Action<object?>, object>)runState!;
+                            var t = (Tuple<AwaitableSocketAsyncEventArgs, Action<object?>, object?>)runState!;
                             t.Item1.InvokeContinuation(t.Item2, t.Item3, forceAsync: false, requiresExecutionContextFlow: false);
                         }, Tuple.Create(this, c, continuationState));
                     }
                 }
             }
 
-            internal ValueTask<SocketReceiveResult> ReceiveAsync(Socket socket, Memory<byte> buffer, CancellationToken cancellationToken)
+#if NETSTANDARD2_0 || NET46
+
+#else
+            internal ValueTask<SocketReceiveResult> ReceiveAsync(Socket socket, Memory<byte> buffer)
             {
                 Debug.Assert(Volatile.Read(ref _continuation) == null, $"Expected null continuation to indicate reserved for use");
 
@@ -329,7 +384,7 @@ namespace System.Net
                 }
             }
 
-            internal ValueTask<SocketError> SendAsync(Socket socket, ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            internal ValueTask<SocketError> SendAsync(Socket socket, ReadOnlyMemory<byte> buffer)
             {
                 Debug.Assert(Volatile.Read(ref _continuation) == null, $"Expected null continuation to indicate reserved for use");
 
@@ -353,8 +408,37 @@ namespace System.Net
                     return new ValueTask<SocketError>(SocketError);
                 }
             }
+#endif
 
-            internal ValueTask<SocketError> SendAsync(Socket socket, byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            /// <exception cref="Exception"/>
+            internal ValueTask<SocketError> ConnectAsync(Socket socket)
+            {
+                Debug.Assert(Volatile.Read(ref _continuation) == null, $"Expected null continuation to indicate reserved for use");
+
+                try
+                {
+                    // Tcp всегда завершается асинхронно.
+                    // Синхронно может случиться NoBufferSpaceAvailable.
+                    if (socket.ConnectAsync(this))
+                    {
+                        // Может случиться AddressAlreadyInUse если занять все клиентские порты.
+                        return new ValueTask<SocketError>(this, _token);
+                    }
+                }
+                catch
+                {
+                    Release();
+                    throw;
+                }
+
+                SocketError error = SocketError;
+
+                Release();
+
+                return new ValueTask<SocketError>(result: error);
+            }
+
+            internal ValueTask<SocketError> SendAsync(Socket socket, byte[] buffer, int offset, int count)
             {
                 Debug.Assert(Volatile.Read(ref _continuation) == null, $"Expected null continuation to indicate reserved for use");
 
@@ -374,7 +458,7 @@ namespace System.Net
                 }
             }
 
-            internal ValueTask<SocketReceiveResult> ReceiveAsync(Socket socket, byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            internal ValueTask<SocketReceiveResult> ReceiveAsync(Socket socket, byte[] buffer, int offset, int count)
             {
                 Debug.Assert(Volatile.Read(ref _continuation) == null, $"Expected null continuation to indicate reserved for use");
 
@@ -389,35 +473,15 @@ namespace System.Net
                 // Операция выполнилась синхронно.
                 {
                     Release();
-
                     return new ValueTask<SocketReceiveResult>(new SocketReceiveResult(BytesTransferred, SocketError));
                 }
             }
 
-            /// <exception cref="Exception"/>
-            public ValueTask<SocketError> ConnectAsync(Socket socket)
+            private void Release()
             {
-                Debug.Assert(Volatile.Read(ref _continuation) == null, $"Expected null continuation to indicate reserved for use");
-
-                try
-                {
-                    // Tcp всегда завершается асинхронно.
-                    if (socket.ConnectAsync(this))
-                    {
-                        return new ValueTask<SocketError>(this, _token);
-                    }
-                }
-                catch
-                {
-                    Release();
-                    throw;
-                }
-
-                SocketError error = SocketError;
-
-                Release();
-
-                return new ValueTask<SocketError>(result: error);
+                _token++;
+                // Тоже самое что CAS но дополняет барьером памяти.
+                Volatile.Write(ref _continuation, s_availableSentinel);
             }
 
             // Результат отправки.
@@ -429,12 +493,28 @@ namespace System.Net
                     ThrowIncorrectTokenException();
                 }
 
-                // Результат нужно взять перед Release.
                 SocketError error = SocketError;
 
                 Release();
 
                 return error;
+            }
+
+            // Результат приёма.
+            // Нельзя выполнять больше одного раза.
+            public SocketReceiveResult GetResult(short token)
+            {
+                if (token != _token)
+                {
+                    ThrowIncorrectTokenException();
+                }
+
+                SocketError error = SocketError;
+                int bytes = BytesTransferred;
+
+                Release();
+
+                return new SocketReceiveResult(bytes, error);
             }
 
             public ValueTaskSourceStatus GetStatus(short token)
@@ -444,10 +524,10 @@ namespace System.Net
                     ThrowIncorrectTokenException();
                 }
 
-                // Так как мы сами не провоцируем исключения, а возвращаем коды ошибок, 
-                // то таск никогда не будет в статусе Faulted.
                 return
-                    ReferenceEquals(_continuation, s_completedSentinel) ? ValueTaskSourceStatus.Succeeded : ValueTaskSourceStatus.Pending;
+                    !ReferenceEquals(_continuation, s_completedSentinel) ? ValueTaskSourceStatus.Pending : ValueTaskSourceStatus.Succeeded;
+                //base.SocketError == SocketError.Success ? ValueTaskSourceStatus.Succeeded :
+                //ValueTaskSourceStatus.Faulted;
             }
 
             public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
@@ -526,11 +606,15 @@ namespace System.Net
                 {
                     if (requiresExecutionContextFlow)
                     {
+#if NETSTANDARD2_0 || NET46
+                        ThreadPool.QueueUserWorkItem(new WaitCallback(continuation), state);
+#else
                         ThreadPool.QueueUserWorkItem(continuation, state, preferLocal: true);
+#endif
                     }
                     else
                     {
-                        ThreadPool.UnsafeQueueUserWorkItem(continuation, state, preferLocal: true);
+                        ThreadPool.UnsafeQueueUserWorkItem(new WaitCallback(continuation), state/*, preferLocal: true*/);
                     }
                 }
                 else
@@ -539,35 +623,10 @@ namespace System.Net
                 }
             }
 
-            // Результат приёма.
-            // Нельзя выполнять больше одного раза.
-            public SocketReceiveResult GetResult(short token)
-            {
-                if (token != _token)
-                {
-                    ThrowIncorrectTokenException();
-                }
-
-                // Результат нужно взять перед Release.
-                SocketError error = SocketError;
-                int bytes = BytesTransferred;
-
-                Release();
-
-                // Мы не провоцируем исключения.
-                //if (error != SocketError.Success)
-                //{
-                //    ThrowException(error, cancellationToken);
-                //}
-
-                return new SocketReceiveResult(bytes, error);
-            }
-
-            private static void ThrowIncorrectTokenException() =>
+            private void ThrowIncorrectTokenException() =>
                 throw new InvalidOperationException("Произошла попытка одновременного выполнения операции чтения или записи на сокете.");
 
-            private static void ThrowMultipleContinuationsException()
-                => throw new InvalidOperationException("Multiple continuations not allowed.");
+            private void ThrowMultipleContinuationsException() => throw new InvalidOperationException("Multiple continuations not allowed.");
         }
 
         private static InvalidOperationException SimultaneouslyOperationException()

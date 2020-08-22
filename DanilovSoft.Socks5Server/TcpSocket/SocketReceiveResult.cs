@@ -14,21 +14,21 @@ namespace System.Net
     /// Count может быть больше 0 несмотря на то что SocketError != Success.
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
-    [DebuggerDisplay(@"\{Count = {Count}, SocketError = {SocketError}\}")]
+    [DebuggerDisplay(@"\{BytesReceived = {BytesReceived}, ErrorCode = {ErrorCode}\}")]
     internal readonly struct SocketReceiveResult
     {
-        public readonly int Count;
-        public readonly SocketError SocketError;
+        public readonly int BytesReceived;
+        public readonly SocketError ErrorCode;
         /// <summary>
         /// Когда Count > 0 И SocketError.Success.
         /// </summary>
-        public bool ReceiveSuccess => Count > 0 && SocketError == SocketError.Success;
+        public bool ReceiveSuccess => BytesReceived > 0 && ErrorCode == SocketError.Success;
 
         [DebuggerStepThrough]
         public SocketReceiveResult(int count, SocketError errorCode)
         {
-            Count = count;
-            SocketError = errorCode;
+            BytesReceived = count;
+            ErrorCode = errorCode;
         }
     }
 }

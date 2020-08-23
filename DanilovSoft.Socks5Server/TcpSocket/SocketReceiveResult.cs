@@ -20,7 +20,7 @@ namespace System.Net
         public readonly int BytesReceived;
         public readonly SocketError ErrorCode;
         /// <summary>
-        /// Когда Count > 0 И SocketError.Success.
+        /// Когда BytesReceived > 0 И ErrorCode.Success.
         /// </summary>
         public bool ReceiveSuccess => BytesReceived > 0 && ErrorCode == SocketError.Success;
 

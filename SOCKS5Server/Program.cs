@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 
 namespace DanilovSoft.Socks5Server
 {
@@ -10,7 +11,16 @@ namespace DanilovSoft.Socks5Server
             using (var listener = new Socks5Listener(port))
             {
                 Console.WriteLine($"Port: {port}");
-                listener.ListenAsync(default).GetAwaiter().GetResult();
+                var task = listener.ListenAsync(default);
+
+                var left = Console.CursorLeft;
+                var top = Console.CursorTop;
+                while (!task.IsCompleted)
+                {
+                    Console.SetCursorPosition(left, top);
+                    Console.WriteLine($"Connections: {listener.ConnectionsCount.ToString().PadRight(10)}");
+                    Thread.Sleep(200);
+                }
             }
         }
     }

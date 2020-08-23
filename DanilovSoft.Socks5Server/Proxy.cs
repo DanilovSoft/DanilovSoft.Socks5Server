@@ -2,6 +2,7 @@
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -11,64 +12,59 @@ using System.Threading.Tasks;
 
 namespace DanilovSoft.Socks5Server
 {
-    internal sealed class ProxyState
-    {
-        internal volatile bool GotClose;
-        internal ProxyState State { get; set; }
-    }
-
-    [StructLayout(LayoutKind.Auto)]
-    internal readonly struct Proxy
+    internal sealed class Proxy
     {
         private const int ProxyBufferSize = 4096;
-        private readonly ManagedTcpSocket _socketA;
-        private readonly ManagedTcpSocket _socketB;
+        public int ConnectionId { get; }
+        private readonly ManagedTcpSocket Socket;
+        private int _socketCloseRequestCount;
+        private Proxy _other;
 
-        public Proxy(ManagedTcpSocket socketA, ManagedTcpSocket socketB)
+#if DEBUG
+        private bool _shutdownSend;
+        private bool _shutdownReceive;
+        private bool _closed;
+#endif
+
+        public Proxy(ManagedTcpSocket socket, int connectionId)
         {
-            _socketA = socketA;
-            _socketB = socketB;
+            Socket = socket;
+            ConnectionId = connectionId;
         }
 
-        public Task RunAsync()
+        /// <remarks>Не бросает исключения.</remarks>
+        public static Task RunAsync(int connectionId, ManagedTcpSocket socketA, ManagedTcpSocket socketB)
         {
-            var state1 = new ProxyState();
-            var state2 = new ProxyState();
+            var proxy1 = new Proxy(socketA, connectionId);
+            var proxy2 = new Proxy(socketB, connectionId);
 
-            state1.State = state2;
-            state2.State = state1;
+            proxy1._other = proxy2;
+            proxy2._other = proxy1;
 
-            Task task1 = Task.Factory.StartNew(ProxyAsync, Tuple.Create(_socketA, _socketB, state1), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
-            Task task2 = Task.Factory.StartNew(ProxyAsync, Tuple.Create(_socketB, _socketA, state2), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
+            Task task1 = Task.Factory.StartNew(proxy1.ReceiveAsync, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
+            Task task2 = Task.Factory.StartNew(proxy2.ReceiveAsync, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
 
             return Task.WhenAll(task1, task2);
         }
 
-        private static Task ProxyAsync(object? state)
-        {
-            Debug.Assert(state != null);
-
-            var a = (Tuple<ManagedTcpSocket, ManagedTcpSocket, ProxyState>)state;
-            return ProxyAsync(a.Item1, a.Item2, a.Item3);
-        }
-
-        private static async Task ProxyAsync(ManagedTcpSocket socketFrom, ManagedTcpSocket socketTo, ProxyState state)
+        private async Task ReceiveAsync()
         {
             // Арендуем память на длительное время(!).
             // TO TNINK возможно лучше создать свой пул что-бы не истощить общий 
             // в случае когда мы не одни его используем.
-            using (var rent = MemoryPool<byte>.Shared.Rent(ProxyBufferSize))
+            var rent = MemoryPool<byte>.Shared.Rent(ProxyBufferSize);
+            try
             {
                 while (true)
                 {
                     SocketReceiveResult rcv;
                     try
                     {
-                        rcv = await socketFrom.ReceiveAsync(rent.Memory).ConfigureAwait(false);
+                        rcv = await Socket.ReceiveAsync(rent.Memory).ConfigureAwait(false);
                     }
                     catch
                     {
-                        ConveyClose(socketTo, state); // Отправлять в этот сокет больше не будем.
+                        ShutdownReceiveOtherAndTryClose(); // Отправлять в другой сокет больше не будем.
                         return;
                     }
 
@@ -77,24 +73,18 @@ namespace DanilovSoft.Socks5Server
                         SocketError sendError;
                         try
                         {
-                            sendError = await socketTo.SendAsync(rent.Memory.Slice(0, rcv.BytesReceived)).ConfigureAwait(false);
+                            sendError = await _other.Socket.SendAsync(rent.Memory.Slice(0, rcv.BytesReceived)).ConfigureAwait(false);
                         }
                         catch
                         {
-                            // Другая сторона получит RST если что-то пришлёт.
-                            TcpReset(socketFrom); // Читать из этого сокета больше не будем.
+                            ShutdownReceiveOtherAndTryClose(); // Читать из своего сокета больше не будем.
                             return;
                         }
 
-                        if (sendError == SocketError.Success)
-                        {
-                            continue;
-                        }
-                        else
+                        if (sendError != SocketError.Success)
                         // Сокет не принял данные.
                         {
-                            // Другая сторона получит RST если что-то пришлёт.
-                            TcpReset(socketFrom); // Читать из этого сокета больше не будем.
+                            ShutdownReceiveOtherAndTryClose(); // Читать из своего сокета больше не будем.
                             return;
                         }
                     }
@@ -104,87 +94,168 @@ namespace DanilovSoft.Socks5Server
                         if (rcv.BytesReceived == 0 && rcv.ErrorCode == SocketError.Success)
                         // Грациозное закрытие —> инициатором закрытия была удалённая сторона tcp.
                         {
-                            ShutdownSend(socketTo); // Делаем грациозное закрытие на стороне RPC.
+                            ShutdownSendOther(); // Делаем грациозное закрытие.
                             return;
                         }
                         else
-                        // Обрыв tcp.
-                        // Инициатором обрыва может быть как удалённая сторона tcp, так и другой поток.
+                        // Не нормальное закрытие tcp.
                         {
                             if (rcv.ErrorCode == SocketError.Shutdown || rcv.ErrorCode == SocketError.OperationAborted)
-                            // Другой поток получил Close (или Data но не смог записать в tcp) и сделал Shutdown-Receive что-бы здесь мы сделали Reset.
+                            // Другой поток сделал Shutdown-Receive что-бы здесь мы сделали Close.
                             {
-                                // Делаем грязный обрыв.
-                                TcpReset(socketFrom);
-
-                                if (!state.GotClose)
-                                {
-                                    // Делаем грязный обрыв у другого потока.
-                                    ConveyClose(socketTo, state);
-                                    return;
-                                }
-                                else
-                                {
-
-                                }
+                                return; // Блок finally сдлает Close.
                             }
                             else
+                            // Обрыв tcp.
                             // Удалённая сторона tcp была инициатором обрыва.
                             {
                                 // ConnectionAborted или ConnectionReset.
                                 Debug.Assert(rcv.ErrorCode == SocketError.ConnectionAborted || rcv.ErrorCode == SocketError.ConnectionReset);
 
-                                // Отправлять данные в этот сокет больше невозможно поэтому сразу закрываем его.
-                                TcpReset(socketFrom);
-
                                 // Делаем грязный обрыв у другого потока.
-                                ConveyClose(socketTo, state);
-
+                                ShutdownReceiveOtherAndTryClose();
+                                
                                 return;
                             }
                         }
                     }
                 }
             }
+            finally
+            {
+                rent.Dispose();
+                TryCloseSelf();
+            }
         }
 
-        private static void TcpReset(ManagedTcpSocket socket)
+        /// <summary>_other.Close()</summary>
+        private bool ShutdownReceiveOtherAndTryClose()
+        {
+            // Прервём другой поток что-бы он сам закрыл свой сокет исли атомарно у нас не получится.
+            ShutdownReceiveOther();
+
+            if (Interlocked.Increment(ref _other._socketCloseRequestCount) == 2)
+            // Оба потока завершили взаимодействия с этим сокетом и его можно безопасно уничтожить.
+            {
+                try
+                {
+                    // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
+                    _other.Socket.Client.Close(timeout: 0);
+
+                    // Альтернативный способ + Close без таймаута.
+                    //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
+                }
+                catch { }
+                _other.DebugSetClosed();
+                return true;
+            }
+            else
+                return false;
+        }
+
+        /// <remarks>Не бросает исключения.</remarks>
+        private void TryCloseSelf()
+        {
+            // Другой поток может отправлять данные в этот момент.
+            // Закрытие сокета может спровоцировать ObjectDisposed в другом потоке.
+
+            if (Interlocked.Increment(ref _socketCloseRequestCount) == 2)
+            // Оба потока завершили взаимодействия с этим сокетом и его можно безопасно уничтожить.
+            {
+                try
+                {
+                    // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
+                    Socket.Client.Close(timeout: 0);
+
+                    // Альтернативный способ + Close без таймаута.
+                    //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
+                }
+                catch { }
+
+                DebugSetClosed();
+            }
+        }
+
+        /// <summary>_otherSocket.Shutdown(Receive)</summary>
+        /// <remarks>Не бросает исключения.</remarks>
+        private void ShutdownReceiveOther()
         {
             try
             {
-                // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
-                socket.Client.Close(timeout: 0);
-
-                // Альтернативный способ + Close без таймаута.
-                //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
+                _other.Socket.Client.Shutdown(SocketShutdown.Receive);
             }
-            catch { }
+            catch (ObjectDisposedException)
+            {
+
+            }
+            catch
+            {
+
+            }
+
+            _other.DebugSetShutdownReceive();
         }
 
-        /// <summary>
-        /// Соединение завершается, если после вызова Shutdown выполняется одно из следующих условий:
-        /// <list type="bullet">
-        /// <item>Данные находятся в входящем сетевом буфере, ожидающем получения.</item>
-        /// <item>Получены дополнительные данные.</item>
-        /// </list>
-        /// </summary>
-        private static void ConveyClose(ManagedTcpSocket socket, ProxyState state)
+        //private void ShutdownReceive()
+        //{
+        //    try
+        //    {
+        //        Socket.Client.Shutdown(SocketShutdown.Receive);
+        //    }
+        //    catch (ObjectDisposedException)
+        //    {
+
+        //    }
+        //    catch
+        //    {
+
+        //    }
+        //    Debug.WriteLine("Shutdown(Receive)");
+        //    DebugSetShutdownReceive();
+        //}
+
+        /// <summary>_otherSocket.Shutdown(Send)</summary>
+        /// <remarks>Не бросает исключения.</remarks>
+        private void ShutdownSendOther()
         {
-            state.State.GotClose = true;
             try
             {
-                socket.Client.Shutdown(SocketShutdown.Receive);
+                _other.Socket.Client.Shutdown(SocketShutdown.Send);
             }
-            catch { }
+            catch (ObjectDisposedException)
+            {
+
+            }
+            catch 
+            {
+            
+            }
+
+            _other.DebugSetShutdownSend();
         }
 
-        private static void ShutdownSend(ManagedTcpSocket socket)
+        [Conditional("DEBUG")]
+        private void DebugSetShutdownSend()
         {
-            try
-            {
-                socket.Client.Shutdown(SocketShutdown.Send);
-            }
-            catch { }
+#if DEBUG
+            _shutdownSend = true;
+#endif
+        }
+
+        [Conditional("DEBUG")]
+        private void DebugSetShutdownReceive()
+        {
+#if DEBUG
+            _shutdownReceive = true;
+#endif
+        }
+
+        [Conditional("DEBUG")]
+        private void DebugSetClosed()
+        {
+#if DEBUG
+            _closed = true;
+#endif
         }
     }
 }

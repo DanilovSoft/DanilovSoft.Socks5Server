@@ -18,13 +18,22 @@ namespace DanilovSoft.Socks5Server
     /// +----+------+----------+------+----------+
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
-    internal readonly struct Socks5LoginPassword
+    [DebuggerDisplay(@"\{default = {this == default}\}")]
+    internal readonly struct Socks5LoginPassword : IEquatable<Socks5LoginPassword>
     {
         public const int MaximumSize = 513;
 
-        public readonly bool IsInitialized;
+        private readonly bool _isInitialized;
         public readonly string? Login;
         public readonly string? Password;
+
+        // ctor
+        private Socks5LoginPassword(string login, string password)
+        {
+            Login = login;
+            Password = password;
+            _isInitialized = true;
+        }
 
         public static async Task<Socks5LoginPassword> ReceiveAsync(ManagedTcpSocket managedTcp, Memory<byte> buffer)
         {
@@ -50,11 +59,29 @@ namespace DanilovSoft.Socks5Server
             return new Socks5LoginPassword(login, password);
         }
 
-        public Socks5LoginPassword(string login, string password)
+        public bool Equals([AllowNull] Socks5LoginPassword other)
         {
-            Login = login;
-            Password = password;
-            IsInitialized = true;
+            return _isInitialized == other._isInitialized;
+        }
+
+        public static bool operator ==(in Socks5LoginPassword left, in Socks5LoginPassword right)
+        {
+            return left.Equals(other: right);
+        }
+
+        public static bool operator !=(in Socks5LoginPassword left, in Socks5LoginPassword right)
+        {
+            return !(left == right);
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is Socks5LoginPassword o && Equals(other: o);
+        }
+
+        public override int GetHashCode()
+        {
+            return 0;
         }
     }
 }

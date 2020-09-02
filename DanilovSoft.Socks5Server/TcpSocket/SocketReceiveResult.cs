@@ -15,7 +15,7 @@ namespace System.Net
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
     [DebuggerDisplay(@"\{BytesReceived = {BytesReceived}, ErrorCode = {ErrorCode}\}")]
-    internal readonly struct SocketReceiveResult
+    public readonly struct SocketReceiveResult
     {
         public readonly int BytesReceived;
         public readonly SocketError ErrorCode;

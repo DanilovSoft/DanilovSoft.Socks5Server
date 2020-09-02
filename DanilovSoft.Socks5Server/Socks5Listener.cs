@@ -18,11 +18,13 @@ namespace DanilovSoft.Socks5Server
         internal int _connectionsCount;
         public int ConnectionsCount => Volatile.Read(ref _connectionsCount);
         internal int _connectionIdSeq;
+        public int Port { get; }
 
         public Socks5Listener(int listenPort)
         {
             _tcpListener = new TcpListener(IPAddress.Any, listenPort);
             _tcpListener.Start();
+            Port = ((IPEndPoint)_tcpListener.LocalEndpoint).Port;
         }
 
         /// <summary>

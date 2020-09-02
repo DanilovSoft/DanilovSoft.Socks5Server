@@ -15,7 +15,7 @@ using DanilovSoft.Socks5Server;
 
 namespace System.Net
 {
-    internal sealed class ManagedTcpSocket : IDisposable
+    public sealed class ManagedTcpSocket : IDisposable
     {
         private readonly AwaitableSocketAsyncEventArgs _receiveArgs;
         private readonly AwaitableSocketAsyncEventArgs _sendArgs;
@@ -606,15 +606,11 @@ namespace System.Net
                 {
                     if (requiresExecutionContextFlow)
                     {
-#if NETSTANDARD2_0 || NET46
-                        ThreadPool.QueueUserWorkItem(new WaitCallback(continuation), state);
-#else
                         ThreadPool.QueueUserWorkItem(continuation, state, preferLocal: true);
-#endif
                     }
                     else
                     {
-                        ThreadPool.UnsafeQueueUserWorkItem(new WaitCallback(continuation), state/*, preferLocal: true*/);
+                        ThreadPool.UnsafeQueueUserWorkItem(continuation, state, preferLocal: true);
                     }
                 }
                 else

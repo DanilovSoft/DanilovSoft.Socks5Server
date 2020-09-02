@@ -21,9 +21,10 @@ namespace DanilovSoft.Socks5Server
         private Proxy _other;
 
 #if DEBUG
-        private bool _shutdownSend;
-        private bool _shutdownReceive;
-        private bool _closed;
+        private volatile bool _shutdownSend;
+        private volatile bool _shutdownReceive;
+        private volatile bool _closed;
+        private volatile bool _disconnect;
 #endif
 
         public Proxy(ManagedTcpSocket socket, int connectionId)
@@ -49,6 +50,8 @@ namespace DanilovSoft.Socks5Server
 
         private async Task ReceiveAsync()
         {
+            Debug.Assert(_other != null);
+
             // Арендуем память на длительное время(!).
             // TO TNINK возможно лучше создать свой пул что-бы не истощить общий 
             // в случае когда мы не одни его используем.
@@ -64,7 +67,7 @@ namespace DanilovSoft.Socks5Server
                     }
                     catch
                     {
-                        ShutdownReceiveOtherAndTryClose(); // Отправлять в другой сокет больше не будем.
+                        ShutdownReceiveOtherAndTryCloseSelf(); // Отправлять в другой сокет больше не будем.
                         return;
                     }
 
@@ -77,14 +80,14 @@ namespace DanilovSoft.Socks5Server
                         }
                         catch
                         {
-                            ShutdownReceiveOtherAndTryClose(); // Читать из своего сокета больше не будем.
+                            ShutdownReceiveOtherAndTryCloseSelf(); // Читать из своего сокета больше не будем.
                             return;
                         }
 
                         if (sendError != SocketError.Success)
                         // Сокет не принял данные.
                         {
-                            ShutdownReceiveOtherAndTryClose(); // Читать из своего сокета больше не будем.
+                            ShutdownReceiveOtherAndTryCloseSelf(); // Читать из своего сокета больше не будем.
                             return;
                         }
                     }
@@ -94,11 +97,13 @@ namespace DanilovSoft.Socks5Server
                         if (rcv.BytesReceived == 0 && rcv.ErrorCode == SocketError.Success)
                         // Грациозное закрытие —> инициатором закрытия была удалённая сторона tcp.
                         {
-                            ShutdownSendOther(); // Делаем грациозное закрытие.
+                            Debug.WriteLine($"ConId {ConnectionId} ShutdownSend");
+
+                            _other.ShutdownSend(); // Делаем грациозное закрытие.
                             return;
                         }
                         else
-                        // Не нормальное закрытие tcp.
+                        // Обрыв tcp.
                         {
                             if (rcv.ErrorCode == SocketError.Shutdown || rcv.ErrorCode == SocketError.OperationAborted)
                             // Другой поток сделал Shutdown-Receive что-бы здесь мы сделали Close.
@@ -106,14 +111,13 @@ namespace DanilovSoft.Socks5Server
                                 return; // Блок finally сдлает Close.
                             }
                             else
-                            // Обрыв tcp.
                             // Удалённая сторона tcp была инициатором обрыва.
                             {
                                 // ConnectionAborted или ConnectionReset.
                                 Debug.Assert(rcv.ErrorCode == SocketError.ConnectionAborted || rcv.ErrorCode == SocketError.ConnectionReset);
 
                                 // Делаем грязный обрыв у другого потока.
-                                ShutdownReceiveOtherAndTryClose();
+                                _other.Disconnect();
                                 
                                 return;
                             }
@@ -124,37 +128,27 @@ namespace DanilovSoft.Socks5Server
             finally
             {
                 rent.Dispose();
-                TryCloseSelf();
+                TryClose();
             }
         }
 
         /// <summary>_other.Close()</summary>
-        private bool ShutdownReceiveOtherAndTryClose()
+        private void ShutdownReceiveOtherAndTryCloseSelf()
         {
+            Debug.Assert(_other != null);
+
             // Прервём другой поток что-бы он сам закрыл свой сокет исли атомарно у нас не получится.
-            ShutdownReceiveOther();
+            _other.ShutdownReceive();
 
             if (Interlocked.Increment(ref _other._socketCloseRequestCount) == 2)
             // Оба потока завершили взаимодействия с этим сокетом и его можно безопасно уничтожить.
             {
-                try
-                {
-                    // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
-                    _other.Socket.Client.Close(timeout: 0);
-
-                    // Альтернативный способ + Close без таймаута.
-                    //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
-                }
-                catch { }
-                _other.DebugSetClosed();
-                return true;
+                _other.Close();
             }
-            else
-                return false;
         }
 
         /// <remarks>Не бросает исключения.</remarks>
-        private void TryCloseSelf()
+        private void TryClose()
         {
             // Другой поток может отправлять данные в этот момент.
             // Закрытие сокета может спровоцировать ObjectDisposed в другом потоке.
@@ -162,65 +156,64 @@ namespace DanilovSoft.Socks5Server
             if (Interlocked.Increment(ref _socketCloseRequestCount) == 2)
             // Оба потока завершили взаимодействия с этим сокетом и его можно безопасно уничтожить.
             {
-                try
-                {
-                    // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
-                    Socket.Client.Close(timeout: 0);
-
-                    // Альтернативный способ + Close без таймаута.
-                    //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
-                }
-                catch { }
-
-                DebugSetClosed();
+                Close();
+                SetClosedFlag();
             }
+        }
+
+        private void Close()
+        {
+            try
+            {
+                // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
+                Socket.Client.Close(timeout: 0);
+
+                // Альтернативный способ + Close без таймаута.
+                //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
+            }
+            catch { }
+            SetClosedFlag();
+        }
+
+        private void Disconnect()
+        {
+            Socket.Client.LingerState = new LingerOption(enable: true, seconds: 0);
+            try
+            {
+                // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
+                Socket.Client.Disconnect(reuseSocket: false);
+
+                // Альтернативный способ + Close без таймаута.
+                //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
+            }
+            catch { }
+
+            Debug.WriteLine($"ConId {ConnectionId} Disconnect");
+
+            SetDisconnectFlag();
         }
 
         /// <summary>_otherSocket.Shutdown(Receive)</summary>
         /// <remarks>Не бросает исключения.</remarks>
-        private void ShutdownReceiveOther()
+        private void ShutdownReceive()
         {
+            Debug.Assert(Socket != null);
             try
             {
-                _other.Socket.Client.Shutdown(SocketShutdown.Receive);
+                Socket.Client.Shutdown(SocketShutdown.Receive);
             }
-            catch (ObjectDisposedException)
-            {
+            catch { }
 
-            }
-            catch
-            {
-
-            }
-
-            _other.DebugSetShutdownReceive();
+            SetShutdownReceiveFlag();
         }
-
-        //private void ShutdownReceive()
-        //{
-        //    try
-        //    {
-        //        Socket.Client.Shutdown(SocketShutdown.Receive);
-        //    }
-        //    catch (ObjectDisposedException)
-        //    {
-
-        //    }
-        //    catch
-        //    {
-
-        //    }
-        //    Debug.WriteLine("Shutdown(Receive)");
-        //    DebugSetShutdownReceive();
-        //}
 
         /// <summary>_otherSocket.Shutdown(Send)</summary>
         /// <remarks>Не бросает исключения.</remarks>
-        private void ShutdownSendOther()
+        private void ShutdownSend()
         {
             try
             {
-                _other.Socket.Client.Shutdown(SocketShutdown.Send);
+                Socket.Client.Shutdown(SocketShutdown.Send);
             }
             catch (ObjectDisposedException)
             {
@@ -231,11 +224,11 @@ namespace DanilovSoft.Socks5Server
             
             }
 
-            _other.DebugSetShutdownSend();
+            SetShutdownSendFlag();
         }
 
         [Conditional("DEBUG")]
-        private void DebugSetShutdownSend()
+        private void SetShutdownSendFlag()
         {
 #if DEBUG
             _shutdownSend = true;
@@ -243,7 +236,7 @@ namespace DanilovSoft.Socks5Server
         }
 
         [Conditional("DEBUG")]
-        private void DebugSetShutdownReceive()
+        private void SetShutdownReceiveFlag()
         {
 #if DEBUG
             _shutdownReceive = true;
@@ -251,10 +244,18 @@ namespace DanilovSoft.Socks5Server
         }
 
         [Conditional("DEBUG")]
-        private void DebugSetClosed()
+        private void SetClosedFlag()
         {
 #if DEBUG
             _closed = true;
+#endif
+        }
+        
+        [Conditional("DEBUG")]
+        private void SetDisconnectFlag()
+        {
+#if DEBUG
+            _disconnect = true;
 #endif
         }
     }

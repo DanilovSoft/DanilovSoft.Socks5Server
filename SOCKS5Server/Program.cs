@@ -12,7 +12,7 @@ namespace DanilovSoft.Socks5Server
     {
         public static IConfigurationRoot? configuration;
 
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
             // Build configuration
             var config = new ConfigurationBuilder()
@@ -45,7 +45,7 @@ namespace DanilovSoft.Socks5Server
             }
         }
 
-        static void TestShutdown()
+        private static void TestShutdown()
         {
             Socket tcp = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             var mTcp = new ManagedTcpSocket(tcp);

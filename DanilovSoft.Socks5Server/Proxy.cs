@@ -18,7 +18,7 @@ namespace DanilovSoft.Socks5Server
         public int ConnectionId { get; }
         private readonly ManagedTcpSocket Socket;
         private int _socketCloseRequestCount;
-        private Proxy _other;
+        private Proxy _other = null!;
 
 #if DEBUG
         private volatile bool _shutdownSend;
@@ -108,7 +108,7 @@ namespace DanilovSoft.Socks5Server
                             if (rcv.ErrorCode == SocketError.Shutdown || rcv.ErrorCode == SocketError.OperationAborted)
                             // Другой поток сделал Shutdown-Receive что-бы здесь мы сделали Close.
                             {
-                                return; // Блок finally сдлает Close.
+                                return; // Блок finally сделает Close.
                             }
                             else
                             // Удалённая сторона tcp была инициатором обрыва.

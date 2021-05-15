@@ -14,10 +14,10 @@ namespace DanilovSoft.Socks5Server
     /// Максимальный размер 257 байт.
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
+    [DebuggerDisplay(@"\{default = {this == default}\}")]
     internal readonly struct Socks5AuthRequest : IEquatable<Socks5AuthRequest>
     {
         public const int MaximumSize = 257;
-        public bool IsEmpty => AuthMethods == null;
         public Socks5AuthMethod[]? AuthMethods { get; }
 
         // ctor.
@@ -100,7 +100,7 @@ namespace DanilovSoft.Socks5Server
 
         public override bool Equals(object? obj)
         {
-            return obj is Socks5AuthRequest request && Equals(request);
+            return obj is Socks5AuthRequest o && Equals(other: o);
         }
 
         public override int GetHashCode()
@@ -110,7 +110,7 @@ namespace DanilovSoft.Socks5Server
 
         public static bool operator ==(in Socks5AuthRequest left, in Socks5AuthRequest right)
         {
-            return left.Equals(right);
+            return left.Equals(other: right);
         }
 
         public static bool operator !=(in Socks5AuthRequest left, in Socks5AuthRequest right)

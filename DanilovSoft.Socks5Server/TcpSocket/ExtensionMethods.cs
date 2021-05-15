@@ -29,10 +29,10 @@ internal static class ExtensionMethods
             {
                 SocketReceiveResult result = t.Result;
 
-                if (result.Count > 0 && result.SocketError == SocketError.Success)
+                if (result.BytesReceived > 0 && result.ErrorCode == SocketError.Success)
                 {
                     // Уменьшить буфер на столько, сколько приняли.
-                    buffer = buffer.Slice(result.Count);
+                    buffer = buffer.Slice(result.BytesReceived);
                 }
                 else
                     return new ValueTask<SocketReceiveResult>(result);
@@ -51,10 +51,10 @@ internal static class ExtensionMethods
         {
             SocketReceiveResult result = await t.ConfigureAwait(false);
 
-            if (result.Count > 0 && result.SocketError == SocketError.Success)
+            if (result.BytesReceived > 0 && result.ErrorCode == SocketError.Success)
             {
                 // Уменьшить буфер на сколько приняли.
-                buffer = buffer.Slice(result.Count);
+                buffer = buffer.Slice(result.BytesReceived);
 
                 if (buffer.Length == 0)
                 {

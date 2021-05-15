@@ -51,5 +51,10 @@ namespace DanilovSoft.Socks5Server
         {
             throw new ObjectDisposedException(objectName);
         }
+
+        internal static ObjectDisposedException ObjectDisposedException(string? objectName)
+        {
+            return new ObjectDisposedException(objectName);
+        }
     }
 }

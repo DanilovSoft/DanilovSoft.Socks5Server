@@ -14,15 +14,13 @@ namespace DanilovSoft.Socks5Server
     internal sealed class Socks5Connection : IDisposable
     {
         private const int Socks5MinSizeRequest = 515;
-        private const int ProxyBufferSize = 4096;
-
         private readonly ManagedTcpSocket _managedTcp;
-        //public event EventHandler<string?>? ConnectionOpened;
-        //public event EventHandler<string?>? ConnectionClosed;
+        private readonly Socks5Listener _listener;
 
-        public Socks5Connection(TcpClient tcp)
+        public Socks5Connection(TcpClient tcp, Socks5Listener listener)
         {
             _managedTcp = new ManagedTcpSocket(tcp.Client);
+            _listener = listener;
         }
 
         /// <summary>
@@ -31,32 +29,29 @@ namespace DanilovSoft.Socks5Server
         /// <remarks>Не бросает исключения.</remarks>
         public async Task ProcessRequestsAsync()
         {
-            Socks5LoginPassword loginPassword = default;
-            IMemoryOwner<byte> rentedMem = MemoryPool<byte>.Shared.Rent(ProxyBufferSize);
-            IMemoryOwner<byte>? rentedMemToDispose = rentedMem;
-            Memory<byte> rentedBuffer = rentedMem.Memory;
-
+            var buf = MemoryPool<byte>.Shared.Rent(4096);
+            IMemoryOwner<byte>? rentedMemToDispose = buf;
             try
             {
                 // В самом начале получаем список коддерживаемых способов аутентификации.
-                Socks5AuthRequest socksAuthRequest = await Socks5AuthRequest.ReceiveAsync(_managedTcp, rentedBuffer).ConfigureAwait(false);
-                if (!socksAuthRequest.IsEmpty)
+                Socks5AuthRequest socksAuthRequest = await Socks5AuthRequest.ReceiveAsync(_managedTcp, buf.Memory).ConfigureAwait(false);
+                if (socksAuthRequest != default)
                 {
                     if (socksAuthRequest.AuthMethods.Contains(Socks5AuthMethod.LoginAndPassword))
                     {
-                        var authResponse = new Socks5AuthResponse(rentedBuffer, Socks5AuthMethod.LoginAndPassword);
+                        var authResponse = new Socks5AuthResponse(buf.Memory, Socks5AuthMethod.LoginAndPassword);
                         SocketError socResult = await _managedTcp.SendAsync(authResponse.BufferSlice).ConfigureAwait(false);
                         if (socResult != SocketError.Success)
-                            return; // Обрав соединения.
+                            return; // Обрыв соединения.
 
-                        loginPassword = await Socks5LoginPassword.ReceiveAsync(_managedTcp, rentedBuffer).ConfigureAwait(false);
-                        if (!loginPassword.IsInitialized)
-                            return; // Обрав соединения.
+                        var loginPassword = await Socks5LoginPassword.ReceiveAsync(_managedTcp, buf.Memory).ConfigureAwait(false);
+                        if (loginPassword == default)
+                            return; // Обрыв соединения.
 
-                        var authResult = new Socks5AuthResult(rentedBuffer, allow: true);
+                        var authResult = new Socks5AuthResult(buf.Memory, allow: true);
                         socResult = await _managedTcp.SendAsync(authResult.BufferSlice).ConfigureAwait(false);
                         if (socResult != SocketError.Success)
-                            return; // Обрав соединения.
+                            return; // Обрыв соединения.
                     }
                     else
                     {
@@ -64,7 +59,7 @@ namespace DanilovSoft.Socks5Server
                         if (socksAuthRequest.AuthMethods.Contains(Socks5AuthMethod.NoAuth))
                         // Отправляем ответ в котором выбрали способ без аутентификации.
                         {
-                            var authResponse = new Socks5AuthResponse(rentedBuffer, Socks5AuthMethod.NoAuth);
+                            var authResponse = new Socks5AuthResponse(buf.Memory, Socks5AuthMethod.NoAuth);
                             SocketError socResult = await _managedTcp.SendAsync(authResponse.BufferSlice).ConfigureAwait(false);
                             if (socResult != SocketError.Success)
                                 return; // Обрав соединения.
@@ -73,65 +68,65 @@ namespace DanilovSoft.Socks5Server
                         // Запрос не поддерживает способ без аутентификации.
                         {
                             // Не было предложено приемлемого метода.
-                            var authResponse = new Socks5AuthResponse(rentedBuffer, Socks5AuthMethod.NotSupported);
+                            var authResponse = new Socks5AuthResponse(buf.Memory, Socks5AuthMethod.NotSupported);
                             await _managedTcp.SendAsync(authResponse.BufferSlice).ConfigureAwait(false);
                             return; // Закрыть соединение.
                         }
                     }
 
                     // Читаем запрос клиента.
-                    Socks5Request socksRequest = await Socks5Request.ReceiveRequestAsync(_managedTcp, rentedBuffer).ConfigureAwait(false);
-                    if (!socksRequest.IsEmpty)
+                    Socks5Request socksRequest = await Socks5Request.ReceiveRequestAsync(_managedTcp, buf.Memory).ConfigureAwait(false);
+                    if (socksRequest != default)
                     {
                         switch (socksRequest.Command)
                         {
                             case Socks5Command.ConnectTcp:
                                 {
+                                    int connectionId = Interlocked.Increment(ref _listener._connectionIdSeq);
                                     try
                                     {
                                         // Подключиться к запрошенному адресу через ноду.
-                                        TcpConnectResult connectTcpResult = await ConnectAsync(in socksRequest).ConfigureAwait(false);
-                                        try
+                                        using (TcpConnectResult connectTcpResult = await ConnectAsync(in socksRequest, connectionId).ConfigureAwait(false))
                                         {
                                             if (connectTcpResult.SocketError == SocketError.Success)
                                             // Удалённая нода успешно подключилась к запрошенному адресу.
                                             {
                                                 Debug.Assert(connectTcpResult.Socket != null);
 
-                                                var ip = (IPEndPoint)connectTcpResult.Socket.Client.RemoteEndPoint;
+                                                IPAddress ip = ((IPEndPoint)connectTcpResult.Socket.Client.RemoteEndPoint).Address;
 
                                                 // Отвечаем клиенту по SOKCS что всё ОК.
-                                                var response = new Socks5Response(ResponseCode.RequestSuccess, ip.Address);
-                                                SocketError socErr = await SendResponseAsync(in response, rentedBuffer).ConfigureAwait(false);
+                                                var response = new Socks5Response(ResponseCode.RequestSuccess, ip);
+
+                                                SocketError socErr = await SendResponseAsync(in response, buf.Memory).ConfigureAwait(false);
                                                 if (socErr != SocketError.Success)
                                                     return; // Обрыв.
 
                                                 rentedMemToDispose.Dispose();
                                                 rentedMemToDispose = null;
 
-                                                //ConnectionOpened?.Invoke(this, loginPassword.Login);
-                                                
-                                                await RunProxyAsync(_managedTcp, connectTcpResult.Socket).ConfigureAwait(false);
+                                                Interlocked.Increment(ref _listener._connectionsCount);
 
-                                                //ConnectionClosed?.Invoke(this, loginPassword.Login);
+                                                // Не бросает исключения.
+                                                await Proxy.RunAsync(connectionId, _managedTcp, connectTcpResult.Socket).ConfigureAwait(false);
+
+                                                LogDisconnect(in socksRequest, connectionId);
+
+                                                Interlocked.Decrement(ref _listener._connectionsCount);
                                             }
                                             else
                                             // Не удалось подключиться к запрошенному адресу.
                                             {
-                                                await SendConnectionRefusedAndDisconnectAsync(rentedBuffer, connectTcpResult.SocketError).ConfigureAwait(false);
+                                                await SendConnectionRefusedAndDisconnectAsync(buf.Memory, connectTcpResult.SocketError).ConfigureAwait(false);
                                                 return;
                                             }
-                                        }
-                                        finally
-                                        {
-                                            connectTcpResult.Dispose();
                                         }
                                     }
                                     catch (Exception ex)
                                     // Не удалось подключиться к запрошенному адресу.
                                     {
                                         Debug.WriteLine(ex);
-                                        await SendConnectionRefusedAndDisconnectAsync(rentedBuffer).ConfigureAwait(false);
+                                        await SendConnectionRefusedAndDisconnectAsync(buf.Memory).ConfigureAwait(false);
                                         return;
                                     }
                                     break;
@@ -145,14 +140,10 @@ namespace DanilovSoft.Socks5Server
                         }
                     }
                     else
-                    {
-                        return; // Обрав соединения.
-                    }
+                        return; // Обрыв соединения.
                 }
                 else
-                {
                     return; // Обрыв соединения.
-                }
             }
             catch (Exception ex)
             {
@@ -165,88 +156,7 @@ namespace DanilovSoft.Socks5Server
             }
         }
 
-        /// <remarks>Не бросает исключения.</remarks>
-        private static Task RunProxyAsync(ManagedTcpSocket thisSocket, ManagedTcpSocket remoteSocket)
-        {
-            var task1 = Task.Run(() => ProxyAsync(thisSocket, remoteSocket));
-            var task2 = Task.Run(() => ProxyAsync(remoteSocket, thisSocket));
-
-            return Task.WhenAll(task1, task2);
-        }
-
-        private static async Task ProxyAsync(ManagedTcpSocket socketFrom, ManagedTcpSocket socketTo)
-        {
-            // Арендуем память на длительное время(!).
-            // TO TNINK возможно лучше создать свой пул что-бы не истощить общий 
-            // в случае когда мы не одни его используем.
-            using (var rent = MemoryPool<byte>.Shared.Rent(ProxyBufferSize))
-            {
-                while (true)
-                {
-                    SocketReceiveResult result;
-                    try
-                    {
-                        result = await socketFrom.ReceiveAsync(rent.Memory).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        try
-                        {
-                            socketTo.Client.Shutdown(SocketShutdown.Send);
-                        }
-                        catch { }
-                        return;
-                    }
-
-                    if (result.Count > 0 && result.SocketError == SocketError.Success)
-                    {
-                        SocketError socketError;
-                        try
-                        {
-                            socketError = await socketTo.SendAsync(rent.Memory.Slice(0, result.Count)).ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                            try
-                            {
-                                // Закрываем приём у противоположного сокета.
-                                socketFrom.Client.Shutdown(SocketShutdown.Receive);
-                            }
-                            catch { }
-                            return;
-                        }
-
-                        if (socketError == SocketError.Success)
-                        {
-                            continue;
-                        }
-                        else
-                        // Принимающий сокет закрылся.
-                        {
-                            try
-                            {
-                                // Закрываем приём у противоположного сокета.
-                                socketFrom.Client.Shutdown(SocketShutdown.Receive);
-                            }
-                            catch { }
-                            return;
-                        }
-                    }
-                    else
-                    // Соединение закрылось.
-                    {
-                        try
-                        {
-                            socketTo.Client.Shutdown(SocketShutdown.Send);
-                        }
-                        catch { }
-                        return;
-                    }
-                }
-            }
-        }
-
-        private static Task<TcpConnectResult> ConnectAsync(in Socks5Request socksRequest)
+        private static Task<TcpConnectResult> ConnectAsync(in Socks5Request socksRequest, int connectionId)
         {
             switch (socksRequest.Address)
             {
@@ -255,11 +165,11 @@ namespace DanilovSoft.Socks5Server
                     {
                         Debug.Assert(socksRequest.IPAddress != null);
 
-                        return ConnectByIpAsync(new IPEndPoint(socksRequest.IPAddress, socksRequest.Port));
+                        return ConnectByIpAsync(connectionId, new IPEndPoint(socksRequest.IPAddress, socksRequest.Port));
                     }
                 case AddressType.DomainName:
                     {
-                        return ConnectByHostAsync(new DnsEndPoint(socksRequest.DomainName, socksRequest.Port));
+                        return ConnectByHostAsync(connectionId, new DnsEndPoint(socksRequest.DomainName, socksRequest.Port));
                     }
                 default:
                     throw new ArgumentOutOfRangeException(nameof(socksRequest));
@@ -267,11 +177,11 @@ namespace DanilovSoft.Socks5Server
         }
 
         /// <exception cref="SocketException"/>
-        private static async Task<TcpConnectResult> ConnectByIpAsync(IPEndPoint endPoint)
+        private static async Task<TcpConnectResult> ConnectByIpAsync(int connectionId, IPEndPoint endPoint)
         {
             if (endPoint.IsNotLoopback())
             {
-                LogDebug($"ConnectIP {endPoint.Address}:{endPoint.Port}");
+                LogDebug(connectionId, $"ConnectIP {endPoint.Address}:{endPoint.Port}");
 
                 var managedTcp = new ManagedTcpSocket(new Socket(SocketType.Stream, ProtocolType.Tcp));
                 try
@@ -299,17 +209,17 @@ namespace DanilovSoft.Socks5Server
             }
             else
             {
-                LogDebug("Loopback запрещён");
+                LogDebug(connectionId, "Loopback запрещён");
                 return new TcpConnectResult(SocketError.HostUnreachable, null);
             }
         }
 
         /// <exception cref="SocketException"/>
-        private static async Task<TcpConnectResult> ConnectByHostAsync(DnsEndPoint endPoint)
+        private static async Task<TcpConnectResult> ConnectByHostAsync(int connectionId, DnsEndPoint endPoint)
         {
             if (endPoint.IsNotLoopback())
             {
-                LogDebug($"ConnectHost {endPoint.Host}:{endPoint.Port}");
+                LogDebug(connectionId, $"ConnectHost {endPoint.Host}:{endPoint.Port}");
 
                 var managedTcp = new ManagedTcpSocket(new Socket(SocketType.Stream, ProtocolType.Tcp));
                 try
@@ -391,9 +301,22 @@ namespace DanilovSoft.Socks5Server
         }
 
         [Conditional("DEBUG")]
-        private static void LogDebug(string message)
+        private static void LogDebug(int connectionId, string message)
         {
-            Trace.WriteLine(message);
+            Trace.WriteLine($"ConId {connectionId} {message}");
+        }
+
+        [Conditional("DEBUG")]
+        private static void LogDisconnect(in Socks5Request request, int connectionId)
+        {
+            if (string.IsNullOrEmpty(request.DomainName))
+            {
+                LogDebug(connectionId, $"Disconnected {request.Address}:{request.Port}");
+            }
+            else
+            {
+                LogDebug(connectionId, $"Disconnected {request.DomainName}:{request.Port}");
+            }
         }
     }
 }

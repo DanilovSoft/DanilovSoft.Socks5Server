@@ -15,11 +15,10 @@ namespace DanilovSoft.Socks5Server
     /// Максимальный размер 262 байт.
     /// </summary>
     [StructLayout(LayoutKind.Auto)]
-    internal readonly struct Socks5Request
+    [DebuggerDisplay(@"\{default = {this == default}\}")]
+    internal readonly struct Socks5Request : IEquatable<Socks5Request>
     {
         public const int MaximumSize = 262;
-        public bool IsEmpty => (IPAddress == null && DomainName == null);
-
         /// <summary>
         /// Поддерживается только ConnectTcp.
         /// </summary>
@@ -127,6 +126,12 @@ namespace DanilovSoft.Socks5Server
             return new Socks5Request(command, address, ipAddress, domainName, port);
         }
 
+        public bool Equals([AllowNull] Socks5Request other)
+        {
+            return IPAddress == other.IPAddress
+            && DomainName == other.DomainName;
+        }
+
         private Socks5Request(Socks5Command command, AddressType address, IPAddress? ipAddress, string? domainName, ushort port)
         {
             Command = command;
@@ -200,6 +205,26 @@ namespace DanilovSoft.Socks5Server
             IPAddress = default;
             DomainName = default;
             Port = default;
+        }
+
+        public static bool operator !=(Socks5Request left, Socks5Request right)
+        {
+            return !(left == right);
+        }
+
+        public static bool operator ==(Socks5Request left, Socks5Request right)
+        {
+            return left.Equals(other: right);
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is Socks5Request o && Equals(other: o);
+        }
+
+        public override int GetHashCode()
+        {
+            return 0;
         }
     }
 }

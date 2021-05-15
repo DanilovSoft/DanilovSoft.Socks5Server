@@ -13,13 +13,18 @@ namespace DanilovSoft.Socks5Server
     public sealed class Socks5Listener : IDisposable
     {
         private readonly TcpListener _tcpListener;
-        public event EventHandler<Socks5ConnectionOpenedEventArgs>? ConnectionOpened;
-        public event EventHandler<Socks5ConnectionClosedEventArgs>? ConnectionClosed;
+        //public event EventHandler<Socks5ConnectionOpenedEventArgs>? ConnectionOpened;
+        //public event EventHandler<Socks5ConnectionClosedEventArgs>? ConnectionClosed;
+        internal int _connectionsCount;
+        public int ConnectionsCount => Volatile.Read(ref _connectionsCount);
+        internal int _connectionIdSeq;
+        public int Port { get; }
 
         public Socks5Listener(int listenPort)
         {
             _tcpListener = new TcpListener(IPAddress.Any, listenPort);
             _tcpListener.Start();
+            Port = ((IPEndPoint)_tcpListener.LocalEndpoint).Port;
         }
 
         /// <summary>
@@ -49,7 +54,7 @@ namespace DanilovSoft.Socks5Server
 
         private async void ProcessConnection(TcpClient tcp)
         {
-            using (var connection = new Socks5Connection(tcp))
+            using (var connection = new Socks5Connection(tcp, this))
             {
                 //connection.ConnectionOpened += Connection_ConnectionOpened;
                 //connection.ConnectionClosed += Connection_ConnectionClosed;
@@ -61,22 +66,12 @@ namespace DanilovSoft.Socks5Server
             }
         }
 
-        private void Connection_ConnectionClosed(object? sender, string? userName)
-        {
-            ConnectionClosed?.Invoke(this, new Socks5ConnectionClosedEventArgs(userName));
-        }
-
-        private void Connection_ConnectionOpened(object? sender, string? userName)
-        {
-            ConnectionOpened?.Invoke(this, new Socks5ConnectionOpenedEventArgs(userName));
-        }
-
         public void Dispose()
         {
             _tcpListener.Stop();
 
-            ConnectionOpened = null;
-            ConnectionClosed = null;
+            //ConnectionOpened = null;
+            //ConnectionClosed = null;
         }
     }
 }

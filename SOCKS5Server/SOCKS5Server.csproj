@@ -6,7 +6,8 @@
     <DockerDefaultTargetOS>Windows</DockerDefaultTargetOS>
     <AssemblyName>SOCKS5Server</AssemblyName>
     <RootNamespace>DanilovSoft.Socks5Server</RootNamespace>
-    <Nullable>annotations</Nullable>
+    <Nullable>enable</Nullable>
+    <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>

@@ -12,12 +12,17 @@ namespace DanilovSoft.Socks5Server
     {
         public static IConfigurationRoot? configuration;
 
-        private static void Main(string[] args)
+        private static async Task Main(string[] args)
         {
             // Build configuration
-            var config = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetParent(AppContext.BaseDirectory).FullName)
-                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            var config = new ConfigurationBuilder();
+
+            var baseDir = Directory.GetParent(AppContext.BaseDirectory);
+            if (baseDir != null)
+            {
+                config.SetBasePath(baseDir.FullName);
+            }
+            config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
                 .AddEnvironmentVariables();
 
             if (args != null)
@@ -29,18 +34,28 @@ namespace DanilovSoft.Socks5Server
             //TestShutdown();
 
             int port = configuration.GetValue<int>("Port");
-            using (var listener = new Socks5Listener(port))
-            {
-                Console.WriteLine($"Port: {listener.Port}");
-                Task task = listener.ListenAsync(default);
+            //if (Environment.UserInteractive)
+            //{
+            //    using (var listener = new Socks5Listener(port))
+            //    {
+            //        Console.WriteLine($"Port: {listener.Port}");
+            //        Task task = listener.ListenAsync(default);
 
-                int left = Console.CursorLeft;
-                int top = Console.CursorTop;
-                while (!task.IsCompleted)
+            //        int left = Console.CursorLeft;
+            //        int top = Console.CursorTop;
+            //        while (!task.IsCompleted)
+            //        {
+            //            Console.SetCursorPosition(left, top);
+            //            Console.WriteLine($"Connections: {listener.ConnectionsCount.ToString().PadRight(10)}");
+            //            await Task.Delay(200);
+            //        }
+            //    }
+            //}
+            //else
+            {
+                using (var listener = new Socks5Listener(port))
                 {
-                    Console.SetCursorPosition(left, top);
-                    Console.WriteLine($"Connections: {listener.ConnectionsCount.ToString().PadRight(10)}");
-                    Thread.Sleep(200);
+                    await listener.ListenAsync(CancellationToken.None);
                 }
             }
         }

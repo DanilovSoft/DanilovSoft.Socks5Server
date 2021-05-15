@@ -4,6 +4,9 @@
 #For more information, please see https://aka.ms/containercompat
 
 FROM mcr.microsoft.com/dotnet/runtime:5.0 AS base
+USER ContainerAdministrator
+RUN net localgroup administrators /add "User Manager\ContainerUser"
+USER ContainerUser
 WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:5.0 AS build

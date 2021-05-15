@@ -3,14 +3,17 @@
 #Depending on the operating system of the host machines(s) that will build or run the containers, the image specified in the FROM statement may need to be changed.
 #For more information, please see https://aka.ms/containercompat
 
-FROM mcr.microsoft.com/dotnet/core/runtime:3.1-nanoserver-1903 AS base
+FROM mcr.microsoft.com/dotnet/core/runtime:3.1-nanoserver-1809 AS base
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/core/sdk:3.1-nanoserver-1903 AS build
+# COPY bin/Release/netcoreapp3.1/publish/ ./
+# ENTRYPOINT ["dotnet", "SOCKS5Server.dll"]
+
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1-nanoserver-1809 AS build
 WORKDIR /src
 COPY ["SOCKS5Server/SOCKS5Server.csproj", "SOCKS5Server/"]
 COPY ["DanilovSoft.Socks5Server/DanilovSoft.Socks5Server.csproj", "DanilovSoft.Socks5Server/"]
-RUN dotnet restore "SOCKS5Server/SOCKS5Server.csproj"
+RUN cmd
 COPY . .
 WORKDIR "/src/SOCKS5Server"
 RUN dotnet build "SOCKS5Server.csproj" -c Release -o /app/build

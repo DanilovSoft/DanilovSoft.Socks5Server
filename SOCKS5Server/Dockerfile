@@ -3,13 +3,13 @@
 #Depending on the operating system of the host machines(s) that will build or run the containers, the image specified in the FROM statement may need to be changed.
 #For more information, please see https://aka.ms/containercompat
 
-FROM mcr.microsoft.com/dotnet/runtime:5.0 AS base
+FROM mcr.microsoft.com/dotnet/runtime:8.0 AS base
 USER ContainerAdministrator
 RUN net localgroup administrators /add "User Manager\ContainerUser"
 USER ContainerUser
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/sdk:5.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY ["SOCKS5Server/SOCKS5Server.csproj", "SOCKS5Server/"]
 COPY ["DanilovSoft.Socks5Server/DanilovSoft.Socks5Server.csproj", "DanilovSoft.Socks5Server/"]

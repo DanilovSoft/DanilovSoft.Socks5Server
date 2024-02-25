@@ -11,15 +11,15 @@ namespace ConsoleAppTest
     {
         static async Task Main(string[] args)
         {
-            TcpListener listener = new TcpListener(IPAddress.Any, 1234);
+            TcpListener listener = new(IPAddress.Any, 1234);
             listener.Start();
 
-            TcpClient cli1 = new TcpClient("127.0.0.1", 1234);
+            TcpClient cli1 = new("127.0.0.1", 1234);
             var mCli1 = new ManagedTcpSocket(cli1.Client);
             TcpClient cli2 = listener.AcceptTcpClient();
             var mCli2 = new ManagedTcpSocket(cli2.Client);
 
-            ThreadPool.QueueUserWorkItem(async delegate 
+            ThreadPool.QueueUserWorkItem(delegate
             {
                 var buf = new byte[] { 1, 2, 3 };
                 Thread.Sleep(2000);

@@ -27,3 +27,5 @@ docker run -d --network=tlan --mac-address 00:15:5D:3D:30:01 --restart=always --
 docker run -d --network=tlan --mac-address 00:15:5D:3D:30:02 --restart=always --name socks2 --hostname socks2 socks5server
 docker run -d --network=tlan --mac-address 00:15:5D:3D:30:03 --restart=always --name socks3 --hostname socks3 socks5server
 docker run -d --network=tlan --mac-address 00:15:5D:3D:30:04 --restart=always --name socks4 --hostname socks4 socks5server
+docker run -d --network=tlan --mac-address 00:15:5D:3D:30:05 --restart=always --name socks5 --hostname socks5 socks5server
+docker run -d --network=tlan --mac-address 00:15:5D:3D:30:06 --restart=always --name socks6 --hostname socks6 socks5server

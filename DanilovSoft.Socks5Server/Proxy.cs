@@ -35,8 +35,8 @@ internal sealed class Proxy
         proxy1._other = proxy2;
         proxy2._other = proxy1;
 
-        Task task1 = Task.Factory.StartNew(proxy1.ReceiveAsync, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
-        Task task2 = Task.Factory.StartNew(proxy2.ReceiveAsync, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
+        var task1 = Task.Factory.StartNew(proxy1.ReceiveAsync, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
+        var task2 = Task.Factory.StartNew(proxy2.ReceiveAsync, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
 
         return Task.WhenAll(task1, task2);
     }

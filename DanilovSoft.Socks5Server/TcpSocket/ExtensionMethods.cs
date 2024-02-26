@@ -15,13 +15,13 @@ internal static class ExtensionMethods
 
     public static ValueTask<SocketReceiveResult> ReceiveBlockAsync(this ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        int count = buffer.Length;
+        var count = buffer.Length;
         while (buffer.Length > 0)
         {
-            ValueTask<SocketReceiveResult> t = managedTcp.ReceiveAsync(buffer, cancellationToken);
+            var t = managedTcp.ReceiveAsync(buffer, cancellationToken);
             if (t.IsCompletedSuccessfully)
             {
-                SocketReceiveResult result = t.Result;
+                var result = t.Result;
 
                 if (result.BytesReceived > 0 && result.ErrorCode == SocketError.Success)
                 {
@@ -29,7 +29,9 @@ internal static class ExtensionMethods
                     buffer = buffer.Slice(result.BytesReceived);
                 }
                 else
+                {
                     return new ValueTask<SocketReceiveResult>(result);
+                }
             }
             else
             {
@@ -43,7 +45,7 @@ internal static class ExtensionMethods
         static async ValueTask<SocketReceiveResult> WaitForReceiveBlockAsync(ValueTask<SocketReceiveResult> t, int count, 
             ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken cancellationToken)
         {
-            SocketReceiveResult result = await t.ConfigureAwait(false);
+            var result = await t.ConfigureAwait(false);
 
             if (result.BytesReceived > 0 && result.ErrorCode == SocketError.Success)
             {
@@ -61,7 +63,9 @@ internal static class ExtensionMethods
                 }
             }
             else
+            {
                 return result;
+            }
         }
     }
 }

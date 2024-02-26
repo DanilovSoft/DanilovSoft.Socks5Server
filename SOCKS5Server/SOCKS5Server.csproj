@@ -9,6 +9,7 @@
     <RootNamespace>DanilovSoft.Socks5Server</RootNamespace>
     <Nullable>enable</Nullable>
     <Platforms>AnyCPU;x64</Platforms>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
   </PropertyGroup>
 
   <ItemGroup>

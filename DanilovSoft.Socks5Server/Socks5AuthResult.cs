@@ -10,7 +10,9 @@ internal readonly struct Socks5AuthResult
     public Socks5AuthResult(Memory<byte> outputBuffer, bool allow)
     {
         if (outputBuffer.Length < 2)
+        {
             throw new ArgumentOutOfRangeException(nameof(outputBuffer), "Размер буфера должен быть больше или равен 2.");
+        }
 
         outputBuffer.Span[0] = 1;
         outputBuffer.Span[1] = (byte)(allow ? 0 : 1);

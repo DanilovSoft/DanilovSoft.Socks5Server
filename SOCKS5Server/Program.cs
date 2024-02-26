@@ -17,19 +17,16 @@ class Program
         {
             config.SetBasePath(baseDir.FullName);
         }
-        config
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
-            .AddEnvironmentVariables();
 
-        if (args != null)
-        {
-            config.AddCommandLine(args);
-        }
-        configuration = config.Build();
+        configuration = config
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            .AddEnvironmentVariables()
+            .AddCommandLine(args)
+            .Build();
 
         //TestShutdown();
 
-        int port = configuration.GetValue<int>("Port");
+        var port = configuration.GetValue<int>("Port");
         //if (Environment.UserInteractive)
         //{
         //    using (var listener = new Socks5Listener(port))

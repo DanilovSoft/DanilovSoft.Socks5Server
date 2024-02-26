@@ -29,16 +29,16 @@ internal readonly struct Socks5Response
         buffer.Span[2] = 0;
         buffer.Span[3] = (byte)_addressType;
 
-        Memory<byte> addressSpan = buffer.Slice(4);
+        var addressSpan = buffer.Slice(4);
 
-        int addressLen = _addressType switch
+        var addressLen = _addressType switch
         {
             AddressType.IPv4 => 4,
             AddressType.IPv6 => 16,
             _ => throw new NotSupportedException(),
         };
         
-        byte[] address = _ipaddress.GetAddressBytes();
+        var address = _ipaddress.GetAddressBytes();
         address.CopyTo(addressSpan);
 
         return buffer.Slice(0, 6 + addressLen);

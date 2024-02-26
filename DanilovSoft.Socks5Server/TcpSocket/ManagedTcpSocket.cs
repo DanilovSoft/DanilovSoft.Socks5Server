@@ -82,13 +82,19 @@ public sealed class ManagedTcpSocket : IDisposable
                     return _receiveArgs.ReceiveAsync(_socket, buffer);
                 }
                 else
+                {
                     return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
+                }
             }
             else
+            {
                 return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
+            }
         }
         else
+        {
             return DisposedValueTask<SocketReceiveResult>();
+        }
     }
 
     /// <exception cref="ObjectDisposedException"/>
@@ -103,13 +109,19 @@ public sealed class ManagedTcpSocket : IDisposable
                     return _sendArgs.SendAsync(_socket, buffer);
                 }
                 else
+                {
                     return new ValueTask<SocketError>(task: Task.FromException<SocketError>(SimultaneouslyOperationException()));
+                }
             }
             else
+            {
                 return new ValueTask<SocketError>(Task.FromCanceled<SocketError>(cancellationToken));
+            }
         }
         else
+        {
             return DisposedValueTask<SocketError>();
+        }
     }
 #endif
     /// <exception cref="ObjectDisposedException"/>
@@ -122,10 +134,10 @@ public sealed class ManagedTcpSocket : IDisposable
     /// <exception cref="ObjectDisposedException"/>
     public ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken)
     {
-        ValueTask<SocketError> t = SendAsync(buffer, cancellationToken);
+        var t = SendAsync(buffer, cancellationToken);
         if (t.IsCompletedSuccessfully)
         {
-            SocketError socErr = t.Result;
+            var socErr = t.Result;
 
             return socErr == SocketError.Success
                 ? default
@@ -138,9 +150,11 @@ public sealed class ManagedTcpSocket : IDisposable
 
         static async ValueTask WaitForWriteTaskAsync(ValueTask<SocketError> t)
         {
-            SocketError socErr = await t.ConfigureAwait(false);
+            var socErr = await t.ConfigureAwait(false);
             if (socErr == SocketError.Success)
+            {
                 return;
+            }
 
             throw socErr.ToException();
         }
@@ -150,10 +164,10 @@ public sealed class ManagedTcpSocket : IDisposable
     /// <exception cref="ObjectDisposedException"/>
     public ValueTask WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
-        ValueTask<SocketError> t = SendAsync(buffer, offset, count, cancellationToken);
+        var t = SendAsync(buffer, offset, count, cancellationToken);
         if (t.IsCompletedSuccessfully)
         {
-            SocketError socErr = t.Result;
+            var socErr = t.Result;
 
             return socErr == SocketError.Success
                 ? default
@@ -166,9 +180,11 @@ public sealed class ManagedTcpSocket : IDisposable
 
         static async ValueTask WaitForSendAsync(ValueTask<SocketError> t)
         {
-            SocketError socErr = await t.ConfigureAwait(false);
+            var socErr = await t.ConfigureAwait(false);
             if (socErr == SocketError.Success)
+            {
                 return;
+            }
 
             throw socErr.ToException();
         }
@@ -181,10 +197,10 @@ public sealed class ManagedTcpSocket : IDisposable
     /// <exception cref="ObjectDisposedException"/>
     public ValueTask<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
-        ValueTask<SocketReceiveResult> t = InnerReceiveAsync(buffer, offset, count, cancellationToken);
+        var t = InnerReceiveAsync(buffer, offset, count, cancellationToken);
         if (t.IsCompletedSuccessfully)
         {
-            SocketReceiveResult result = t.Result;
+            var result = t.Result;
 
             return result.ErrorCode == SocketError.Success
                 ? new ValueTask<int>(result.BytesReceived)
@@ -197,9 +213,11 @@ public sealed class ManagedTcpSocket : IDisposable
 
         static async ValueTask<int> WaitForReadAsync(ValueTask<SocketReceiveResult> t)
         {
-            SocketReceiveResult result = await t.ConfigureAwait(false);
+            var result = await t.ConfigureAwait(false);
             if (result.ErrorCode == SocketError.Success)
+            {
                 return result.BytesReceived;
+            }
 
             throw result.ErrorCode.ToException();
         }
@@ -217,13 +235,19 @@ public sealed class ManagedTcpSocket : IDisposable
                     return _sendArgs.SendAsync(_socket, buffer, offset, count);
                 }
                 else
+                {
                     return new ValueTask<SocketError>(task: Task.FromException<SocketError>(SimultaneouslyOperationException()));
+                }
             }
             else
+            {
                 return new ValueTask<SocketError>(Task.FromCanceled<SocketError>(cancellationToken));
+            }
         }
         else
+        {
             return DisposedValueTask<SocketError>();
+        }
     }
 
     /// <exception cref="ObjectDisposedException"/>
@@ -238,13 +262,19 @@ public sealed class ManagedTcpSocket : IDisposable
                     return _receiveArgs.ReceiveAsync(_socket, buffer, offset, count);
                 }
                 else
+                {
                     return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
+                }
             }
             else
+            {
                 return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
+            }
         }
         else
+        {
             return DisposedValueTask<SocketReceiveResult>();
+        }
     }
 
     /// <exception cref="ObjectDisposedException"/>
@@ -253,7 +283,7 @@ public sealed class ManagedTcpSocket : IDisposable
         if (!IsDisposed)
         {
             // Можем использовать слот чтения или отправки.
-            AwaitableSocketAsyncEventArgs saea = _sendArgs;
+            var saea = _sendArgs;
 
             // Слот должен быть свободен потому что подключение это самая первая операция (только для TCP).
             if (!saea.Reserve())
@@ -266,7 +296,9 @@ public sealed class ManagedTcpSocket : IDisposable
             return saea.ConnectAsync(_socket).AsTask();
         }
         else
+        {
             return Task.FromException<SocketError>(DisposedException());
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -324,17 +356,17 @@ public sealed class ManagedTcpSocket : IDisposable
         {
             // When the operation completes, see if OnCompleted was already called to hook up a continuation.
             // If it was, invoke the continuation.
-            Action<object?>? c = _continuation;
+            var c = _continuation;
             if (c != null || (c = Interlocked.CompareExchange(ref _continuation, s_completedSentinel, null)) != null)
             {
                 Debug.Assert(c != s_availableSentinel, "The delegate should not have been the available sentinel.");
                 Debug.Assert(c != s_completedSentinel, "The delegate should not have been the completed sentinel.");
 
-                object continuationState = UserToken;
+                var continuationState = UserToken;
                 UserToken = null;
                 _continuation = s_completedSentinel; // in case someone's polling IsCompleted
 
-                ExecutionContext? ec = _executionContext;
+                var ec = _executionContext;
                 if (ec == null)
                 {
                     InvokeContinuation(c, continuationState, forceAsync: false, requiresExecutionContextFlow: false);
@@ -383,7 +415,7 @@ public sealed class ManagedTcpSocket : IDisposable
             // Меняет тип буффера на доступный для записи(!).
             // Но запись ни в коем случае не должна осуществляться.
             // Это безопасно так как SetBuffer будет производить только чтение.
-            Memory<byte> memory = MemoryMarshal.AsMemory(buffer);
+            var memory = MemoryMarshal.AsMemory(buffer);
 
             SetBuffer(memory);
 
@@ -423,7 +455,7 @@ public sealed class ManagedTcpSocket : IDisposable
                 throw;
             }
 
-            SocketError error = SocketError;
+            var error = SocketError;
 
             Release();
 
@@ -485,7 +517,7 @@ public sealed class ManagedTcpSocket : IDisposable
                 ThrowIncorrectTokenException();
             }
 
-            SocketError error = SocketError;
+            var error = SocketError;
 
             Release();
 
@@ -501,8 +533,8 @@ public sealed class ManagedTcpSocket : IDisposable
                 ThrowIncorrectTokenException();
             }
 
-            SocketError error = SocketError;
-            int bytes = BytesTransferred;
+            var error = SocketError;
+            var bytes = BytesTransferred;
 
             Release();
 
@@ -536,14 +568,14 @@ public sealed class ManagedTcpSocket : IDisposable
 
             if ((flags & ValueTaskSourceOnCompletedFlags.UseSchedulingContext) != 0)
             {
-                SynchronizationContext? sc = SynchronizationContext.Current;
+                var sc = SynchronizationContext.Current;
                 if (sc != null && sc.GetType() != typeof(SynchronizationContext))
                 {
                     _scheduler = sc;
                 }
                 else
                 {
-                    TaskScheduler ts = TaskScheduler.Current;
+                    var ts = TaskScheduler.Current;
                     if (ts != TaskScheduler.Default)
                     {
                         _scheduler = ts;
@@ -552,7 +584,7 @@ public sealed class ManagedTcpSocket : IDisposable
             }
 
             UserToken = state; // Use UserToken to carry the continuation state around
-            Action<object?>? prevContinuation = Interlocked.CompareExchange(ref _continuation, continuation, null);
+            var prevContinuation = Interlocked.CompareExchange(ref _continuation, continuation, null);
             if (ReferenceEquals(prevContinuation, s_completedSentinel))
             {
                 // Lost the race condition and the operation has now already completed.
@@ -560,7 +592,7 @@ public sealed class ManagedTcpSocket : IDisposable
                 // avoid a stack dive.  However, since all of the queueing mechanisms flow
                 // ExecutionContext, and since we're still in the same context where we
                 // captured it, we can just ignore the one we captured.
-                bool requiresExecutionContextFlow = _executionContext != null;
+                var requiresExecutionContextFlow = _executionContext != null;
                 _executionContext = null;
                 UserToken = null; // we have the state in "state"; no need for the one in UserToken
                 InvokeContinuation(continuation, state, forceAsync: true, requiresExecutionContextFlow);
@@ -575,7 +607,7 @@ public sealed class ManagedTcpSocket : IDisposable
 
         private void InvokeContinuation(Action<object?> continuation, object? state, bool forceAsync, bool requiresExecutionContextFlow)
         {
-            object? scheduler = _scheduler;
+            var scheduler = _scheduler;
             _scheduler = null;
 
             if (scheduler != null)

@@ -35,22 +35,26 @@ internal readonly struct Socks5LoginPassword : IEquatable<Socks5LoginPassword>
     {
         Debug.Assert(buffer.Length >= MaximumSize);
 
-        SocketReceiveResult rcvResult = await managedTcp.ReceiveAsync(buffer).ConfigureAwait(false);
+        var rcvResult = await managedTcp.ReceiveAsync(buffer).ConfigureAwait(false);
         if (!rcvResult.ReceiveSuccess)
+        {
             return default;
+        }
 
-        byte version = buffer.Span[0];
+        var version = buffer.Span[0];
         if (version != 1)
+        {
             throw new InvalidOperationException($"Не верный номер версии. Получено {version}, ожидалось 1");
+        }
 
-        byte ulen = buffer.Span[1];
+        var ulen = buffer.Span[1];
         buffer = buffer.Slice(2);
 
-        string login = Encoding.UTF8.GetString(buffer.Slice(0, ulen).Span);
+        var login = Encoding.UTF8.GetString(buffer.Slice(0, ulen).Span);
 
         buffer = buffer.Slice(ulen);
-        byte plen = buffer.Span[0];
-        string password = Encoding.UTF8.GetString(buffer.Slice(1, plen).Span);
+        var plen = buffer.Span[0];
+        var password = Encoding.UTF8.GetString(buffer.Slice(1, plen).Span);
 
         return new Socks5LoginPassword(login, password);
     }

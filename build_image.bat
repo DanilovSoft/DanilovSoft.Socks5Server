@@ -5,19 +5,27 @@ CD %~dp0
 docker build -t socks5server -f Dockerfile .
 
 ECHO.
-IF %ERRORLEVEL% NEQ 0 "Произошла ошибка"
+IF %ERRORLEVEL% NEQ 0 ECHO Error building Dockerfile
 ECHO.
 REM ECHO Всё выполнено
 
-docker stop socks1
-docker stop socks2
-docker stop socks3
-docker stop socks4
+ECHO Stopping running containers...
 
-docker rm socks1
-docker rm socks2
-docker rm socks3
-docker rm socks4
+docker stop socks1 >nul 2>&1
+docker stop socks2 >nul 2>&1
+docker stop socks3 >nul 2>&1
+docker stop socks4 >nul 2>&1
+docker stop socks5 >nul 2>&1
+docker stop socks6 >nul 2>&1
+
+ECHO Deleting running containers...
+
+docker rm socks1 >nul 2>&1
+docker rm socks2 >nul 2>&1
+docker rm socks3 >nul 2>&1
+docker rm socks4 >nul 2>&1
+docker rm socks5 >nul 2>&1
+docker rm socks6 >nul 2>&1
 
 REM Создать виртуальный свитч на определенный интерфейс:
 docker network create -d transparent -o com.docker.network.windowsshim.interface="External" tlan

@@ -1,4 +1,6 @@
-﻿# Выполнить Publish.
+﻿Если контейнеры у нас будут на Windows то версия OS в контейнере должна совпадать с версией OS хоста, например используем '8.0-nanoserver-ltsc2022'
+
+# Выполнить Publish.
 
 # Создать образ из файлов 'publish'.
 docker build -t socks_server -f Dockerfile .

@@ -8,6 +8,9 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{0A7E54C4-6915-41C9-9E79-78BA76CA93FB}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
+		build_image.bat = build_image.bat
+		Dockerfile = Dockerfile
+		ReadMe.txt = ReadMe.txt
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SOCKS5Server", "SOCKS5Server\SOCKS5Server.csproj", "{2159C37D-06D4-45A6-8B63-795D098FAA0B}"

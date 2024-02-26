@@ -5,7 +5,7 @@ CD %~dp0
 docker build -t socks5server -f Dockerfile .
 
 ECHO.
-IF %ERRORLEVEL% NEQ 0 Произошла ошибка
+IF %ERRORLEVEL% NEQ 0 "Произошла ошибка"
 ECHO.
 REM ECHO Всё выполнено
 

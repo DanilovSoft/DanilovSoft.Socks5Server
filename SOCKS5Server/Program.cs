@@ -1,91 +1,86 @@
 ﻿using Microsoft.Extensions.Configuration;
-using System;
-using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading;
-using System.Threading.Tasks;
 
-namespace DanilovSoft.Socks5Server
+namespace DanilovSoft.Socks5Server;
+
+class Program
 {
-    class Program
+    public static IConfigurationRoot? configuration;
+
+    private static async Task Main(string[] args)
     {
-        public static IConfigurationRoot? configuration;
+        var config = new ConfigurationBuilder();
 
-        private static async Task Main(string[] args)
+        var baseDir = Directory.GetParent(AppContext.BaseDirectory);
+        if (baseDir != null)
         {
-            // Build configuration
-            var config = new ConfigurationBuilder();
+            config.SetBasePath(baseDir.FullName);
+        }
+        config
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            .AddEnvironmentVariables();
 
-            var baseDir = Directory.GetParent(AppContext.BaseDirectory);
-            if (baseDir != null)
+        if (args != null)
+        {
+            config.AddCommandLine(args);
+        }
+        configuration = config.Build();
+
+        //TestShutdown();
+
+        int port = configuration.GetValue<int>("Port");
+        //if (Environment.UserInteractive)
+        //{
+        //    using (var listener = new Socks5Listener(port))
+        //    {
+        //        Console.WriteLine($"Port: {listener.Port}");
+        //        Task task = listener.ListenAsync(default);
+
+        //        int left = Console.CursorLeft;
+        //        int top = Console.CursorTop;
+        //        while (!task.IsCompleted)
+        //        {
+        //            Console.SetCursorPosition(left, top);
+        //            Console.WriteLine($"Connections: {listener.ConnectionsCount.ToString().PadRight(10)}");
+        //            await Task.Delay(200);
+        //        }
+        //    }
+        //}
+        //else
+        {
+            using (var listener = new Socks5Listener(port))
             {
-                config.SetBasePath(baseDir.FullName);
-            }
-            config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
-                .AddEnvironmentVariables();
-
-            if (args != null)
-            {
-                config.AddCommandLine(args);
-            }
-            configuration = config.Build();
-
-            //TestShutdown();
-
-            int port = configuration.GetValue<int>("Port");
-            //if (Environment.UserInteractive)
-            //{
-            //    using (var listener = new Socks5Listener(port))
-            //    {
-            //        Console.WriteLine($"Port: {listener.Port}");
-            //        Task task = listener.ListenAsync(default);
-
-            //        int left = Console.CursorLeft;
-            //        int top = Console.CursorTop;
-            //        while (!task.IsCompleted)
-            //        {
-            //            Console.SetCursorPosition(left, top);
-            //            Console.WriteLine($"Connections: {listener.ConnectionsCount.ToString().PadRight(10)}");
-            //            await Task.Delay(200);
-            //        }
-            //    }
-            //}
-            //else
-            {
-                using (var listener = new Socks5Listener(port))
-                {
-                    await listener.ListenAsync(CancellationToken.None);
-                }
+                await listener.ListenAsync(CancellationToken.None);
             }
         }
+    }
 
-        private static void TestShutdown()
+    private static void TestShutdown()
+    {
+        Socket tcp = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        ManagedTcpSocket mTcp = new(tcp);
+        mTcp.Client.Connect("google.com", 80);
+
+        DelayShutdown(tcp);
+
+        SocketReceiveResult n;
+        try
         {
-            Socket tcp = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            var mTcp = new ManagedTcpSocket(tcp);
-            mTcp.Client.Connect("google.com", 80);
-
-            DelayShutdown(tcp);
-
-            SocketReceiveResult n;
-            try
-            {
-                n = mTcp.ReceiveAsync(new byte[1024]).AsTask().Result;
-            }
-            catch (Exception)
-            {
-
-            }
+            n = mTcp.ReceiveAsync(new byte[1024]).AsTask().Result;
         }
-
-        static void DelayShutdown(Socket tcp)
+        catch (Exception)
         {
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                Thread.Sleep(5_000);
-                tcp.Disconnect(false);
-            });
+
         }
+    }
+
+    static void DelayShutdown(Socket tcp)
+    {
+        ThreadPool.QueueUserWorkItem(delegate
+        {
+            Thread.Sleep(5_000);
+            tcp.Disconnect(false);
+        });
     }
 }

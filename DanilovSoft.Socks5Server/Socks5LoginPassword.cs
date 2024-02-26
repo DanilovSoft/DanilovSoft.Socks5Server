@@ -1,87 +1,82 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading.Tasks;
 
-namespace DanilovSoft.Socks5Server
+namespace DanilovSoft.Socks5Server;
+
+/// <summary>
+/// +----+------+----------+------+----------+
+/// |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
+/// +----+------+----------+------+----------+
+/// | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+/// +----+------+----------+------+----------+
+/// </summary>
+[StructLayout(LayoutKind.Auto)]
+[DebuggerDisplay(@"\{default = {this == default}\}")]
+internal readonly struct Socks5LoginPassword : IEquatable<Socks5LoginPassword>
 {
-    /// <summary>
-    /// +----+------+----------+------+----------+
-    /// |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
-    /// +----+------+----------+------+----------+
-    /// | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
-    /// +----+------+----------+------+----------+
-    /// </summary>
-    [StructLayout(LayoutKind.Auto)]
-    [DebuggerDisplay(@"\{default = {this == default}\}")]
-    internal readonly struct Socks5LoginPassword : IEquatable<Socks5LoginPassword>
+    public const int MaximumSize = 513;
+
+    private readonly bool _isInitialized;
+    public readonly string? Login;
+    public readonly string? Password;
+
+    // ctor
+    private Socks5LoginPassword(string login, string password)
     {
-        public const int MaximumSize = 513;
+        Login = login;
+        Password = password;
+        _isInitialized = true;
+    }
 
-        private readonly bool _isInitialized;
-        public readonly string? Login;
-        public readonly string? Password;
+    public static async Task<Socks5LoginPassword> ReceiveAsync(ManagedTcpSocket managedTcp, Memory<byte> buffer)
+    {
+        Debug.Assert(buffer.Length >= MaximumSize);
 
-        // ctor
-        private Socks5LoginPassword(string login, string password)
-        {
-            Login = login;
-            Password = password;
-            _isInitialized = true;
-        }
+        SocketReceiveResult rcvResult = await managedTcp.ReceiveAsync(buffer).ConfigureAwait(false);
+        if (!rcvResult.ReceiveSuccess)
+            return default;
 
-        public static async Task<Socks5LoginPassword> ReceiveAsync(ManagedTcpSocket managedTcp, Memory<byte> buffer)
-        {
-            Debug.Assert(buffer.Length >= MaximumSize);
+        byte version = buffer.Span[0];
+        if (version != 1)
+            throw new InvalidOperationException($"Не верный номер версии. Получено {version}, ожидалось 1");
 
-            SocketReceiveResult rcvResult = await managedTcp.ReceiveAsync(buffer).ConfigureAwait(false);
-            if (!rcvResult.ReceiveSuccess)
-                return default;
+        byte ulen = buffer.Span[1];
+        buffer = buffer.Slice(2);
 
-            byte version = buffer.Span[0];
-            if (version != 1)
-                throw new InvalidOperationException($"Не верный номер версии. Получено {version}, ожидалось 1");
+        string login = Encoding.UTF8.GetString(buffer.Slice(0, ulen).Span);
 
-            byte ulen = buffer.Span[1];
-            buffer = buffer.Slice(2);
+        buffer = buffer.Slice(ulen);
+        byte plen = buffer.Span[0];
+        string password = Encoding.UTF8.GetString(buffer.Slice(1, plen).Span);
 
-            string login = Encoding.UTF8.GetString(buffer.Slice(0, ulen).Span);
+        return new Socks5LoginPassword(login, password);
+    }
 
-            buffer = buffer.Slice(ulen);
-            byte plen = buffer.Span[0];
-            string password = Encoding.UTF8.GetString(buffer.Slice(1, plen).Span);
+    public bool Equals([AllowNull] Socks5LoginPassword other)
+    {
+        return _isInitialized == other._isInitialized;
+    }
 
-            return new Socks5LoginPassword(login, password);
-        }
+    public static bool operator ==(in Socks5LoginPassword left, in Socks5LoginPassword right)
+    {
+        return left.Equals(other: right);
+    }
 
-        public bool Equals([AllowNull] Socks5LoginPassword other)
-        {
-            return _isInitialized == other._isInitialized;
-        }
+    public static bool operator !=(in Socks5LoginPassword left, in Socks5LoginPassword right)
+    {
+        return !(left == right);
+    }
 
-        public static bool operator ==(in Socks5LoginPassword left, in Socks5LoginPassword right)
-        {
-            return left.Equals(other: right);
-        }
+    public override bool Equals(object? obj)
+    {
+        return obj is Socks5LoginPassword o && Equals(other: o);
+    }
 
-        public static bool operator !=(in Socks5LoginPassword left, in Socks5LoginPassword right)
-        {
-            return !(left == right);
-        }
-
-        public override bool Equals(object? obj)
-        {
-            return obj is Socks5LoginPassword o && Equals(other: o);
-        }
-
-        public override int GetHashCode()
-        {
-            return 0;
-        }
+    public override int GetHashCode()
+    {
+        return 0;
     }
 }

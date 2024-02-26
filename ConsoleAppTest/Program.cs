@@ -12,7 +12,7 @@ class Program
 
         TcpClient cli1 = new("127.0.0.1", 1234);
         var mCli1 = new ManagedTcpSocket(cli1.Client);
-        TcpClient cli2 = listener.AcceptTcpClient();
+        var cli2 = listener.AcceptTcpClient();
         var mCli2 = new ManagedTcpSocket(cli2.Client);
 
         ThreadPool.QueueUserWorkItem(delegate

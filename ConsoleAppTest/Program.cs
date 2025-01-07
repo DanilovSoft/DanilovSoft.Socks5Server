@@ -37,6 +37,6 @@ class Program
             Thread.Sleep(500);
         }
 
-        Thread.Sleep(-1);
+        //Thread.Sleep(-1);
     }
 }

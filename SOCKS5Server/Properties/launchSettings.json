@@ -2,6 +2,13 @@
   "profiles": {
     "SOCKS5Server": {
       "commandName": "Project"
+    },
+    "WSL": {
+      "commandName": "WSL2",
+      "distributionName": ""
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
     }
   }
 }

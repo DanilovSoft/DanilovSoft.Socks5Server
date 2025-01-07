@@ -25,7 +25,7 @@ internal readonly struct Socks5AuthRequest : IEquatable<Socks5AuthRequest>
         Debug.Assert(buffer.Length >= MaximumSize);
 
         // Как минимум должно быть 2 байта.
-        var rcvResult = await managedTcp.ReceiveBlockAsync(buffer.Slice(0, 2)).ConfigureAwait(false);
+        var rcvResult = await managedTcp.ReceiveBlockAsync(buffer[..2]).ConfigureAwait(false);
         if (!rcvResult.ReceiveSuccess)
         {
             return new Socks5AuthRequest(authMethods: null);
@@ -53,7 +53,7 @@ internal readonly struct Socks5AuthRequest : IEquatable<Socks5AuthRequest>
         for (var i = 0; i < authSpan.Length; i++)
         {
             var a = (Socks5AuthMethod)authSpan.Span[i];
-            if (Enum.IsDefined(typeof(Socks5AuthMethod), a))
+            if (Enum.IsDefined(a))
             {
                 authMethods[i] = a;
             }

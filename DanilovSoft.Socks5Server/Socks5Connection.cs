@@ -5,16 +5,9 @@ using System.Net.Sockets;
 
 namespace DanilovSoft.Socks5Server;
 
-internal sealed class Socks5Connection : IDisposable
+internal sealed class Socks5Connection(TcpClient tcp, Socks5Listener listener) : IDisposable
 {
-    private readonly ManagedTcpSocket _managedTcp;
-    private readonly Socks5Listener _listener;
-
-    public Socks5Connection(TcpClient tcp, Socks5Listener listener)
-    {
-        _managedTcp = new ManagedTcpSocket(tcp.Client);
-        _listener = listener;
-    }
+    private readonly ManagedTcpSocket _managedTcp = new(tcp.Client);
 
     /// <summary>
     /// Получает и выполняет один SOCKS5 запрос.
@@ -89,7 +82,7 @@ internal sealed class Socks5Connection : IDisposable
             {
                 case Socks5Command.ConnectTcp:
                     {
-                        var connectionId = Interlocked.Increment(ref _listener._connectionIdSeq);
+                        var connectionId = Interlocked.Increment(ref listener._connectionIdSeq);
                         try
                         {
                             // Подключиться к запрошенному адресу через ноду.
@@ -114,14 +107,14 @@ internal sealed class Socks5Connection : IDisposable
                                     rentedMemToDispose.Dispose();
                                     rentedMemToDispose = null;
 
-                                    Interlocked.Increment(ref _listener._connectionsCount);
+                                    Interlocked.Increment(ref listener._connectionsCount);
 
                                     // Не бросает исключения.
                                     await Proxy.RunAsync(connectionId, _managedTcp, connectTcpResult.Socket).ConfigureAwait(false);
 
                                     LogDisconnect(in socksRequest, connectionId);
 
-                                    Interlocked.Decrement(ref _listener._connectionsCount);
+                                    Interlocked.Decrement(ref listener._connectionsCount);
                                 }
                                 else
                                 // Не удалось подключиться к запрошенному адресу.
@@ -172,7 +165,7 @@ internal sealed class Socks5Connection : IDisposable
                 }
             case AddressType.DomainName:
                 {
-                    return ConnectByHostAsync(connectionId, new DnsEndPoint(socksRequest.DomainName, socksRequest.Port));
+                    return ConnectByHostAsync(connectionId, new DnsEndPoint(socksRequest.DomainName!, socksRequest.Port));
                 }
             default:
                 throw new ArgumentOutOfRangeException(nameof(socksRequest));

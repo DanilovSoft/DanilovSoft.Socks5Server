@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 
@@ -8,6 +9,7 @@ class Program
 {
     public static IConfigurationRoot? configuration;
 
+    [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.GetValue<T>(String)")]
     private static async Task Main(string[] args)
     {
         var config = new ConfigurationBuilder();
@@ -48,29 +50,30 @@ class Program
         {
             using (var listener = new Socks5Listener(port))
             {
+                Console.WriteLine($"Listening port {listener.Port}");
                 await listener.ListenAsync(CancellationToken.None);
             }
         }
     }
 
-    private static void TestShutdown()
-    {
-        Socket tcp = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        ManagedTcpSocket mTcp = new(tcp);
-        mTcp.Client.Connect("google.com", 80);
+    //private static void TestShutdown()
+    //{
+    //    Socket tcp = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+    //    ManagedTcpSocket mTcp = new(tcp);
+    //    mTcp.Client.Connect("google.com", 80);
 
-        DelayShutdown(tcp);
+    //    DelayShutdown(tcp);
 
-        SocketReceiveResult n;
-        try
-        {
-            n = mTcp.ReceiveAsync(new byte[1024]).AsTask().Result;
-        }
-        catch (Exception)
-        {
+    //    SocketReceiveResult n;
+    //    try
+    //    {
+    //        n = mTcp.ReceiveAsync(new byte[1024]).AsTask().Result;
+    //    }
+    //    catch (Exception)
+    //    {
 
-        }
-    }
+    //    }
+    //}
 
     static void DelayShutdown(Socket tcp)
     {

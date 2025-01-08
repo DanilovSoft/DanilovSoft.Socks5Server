@@ -1,8 +1,0 @@
-version: '3.4'
-
-services:
-  socks5server:
-    image: ${DOCKER_REGISTRY-}socks5server
-    build:
-      context: .
-      dockerfile: SOCKS5Server/Dockerfile

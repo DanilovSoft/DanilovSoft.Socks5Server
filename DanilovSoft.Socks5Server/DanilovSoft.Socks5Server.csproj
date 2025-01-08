@@ -2,10 +2,9 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-	  <PublishAot>true</PublishAot>
+	<PublishAot>true</PublishAot>
     <Nullable>enable</Nullable>
 	<ImplicitUsings>enable</ImplicitUsings>
-    <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>

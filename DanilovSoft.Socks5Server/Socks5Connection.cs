@@ -12,67 +12,60 @@ internal sealed class Socks5Connection(TcpClient tcp, Socks5Listener listener) :
     /// <summary>
     /// Получает и выполняет один SOCKS5 запрос.
     /// </summary>
-    /// <remarks>Не бросает исключения.</remarks>
-    public async Task ProcessRequestsAsync()
+    public async Task ProcessRequestsAsync(CancellationToken ct = default)
     {
-        var buf = MemoryPool<byte>.Shared.Rent(4096);
-        var rentedMemToDispose = buf;
+        var buf = ArrayPool<byte>.Shared.Rent(4096);
+        //var rentedMemToDispose = buf;
         try
         {
             // В самом начале получаем список коддерживаемых способов аутентификации.
-            var socksAuthRequest = await Socks5AuthRequest.ReceiveAsync(_managedTcp, buf.Memory).ConfigureAwait(false);
+            var socksAuthRequest = await Socks5AuthRequest.ReceiveAsync(_managedTcp, buf, ct).ConfigureAwait(false);
             if (socksAuthRequest == default)
             {
                 return; // Обрыв соединения.
             }
 
-            if (socksAuthRequest.AuthMethods.Contains(Socks5AuthMethod.LoginAndPassword))
+            if (socksAuthRequest.AuthMethods?.Contains(Socks5AuthMethod.LoginAndPassword) == true)
             {
-                var authResponse = new Socks5AuthResponse(buf.Memory, Socks5AuthMethod.LoginAndPassword);
-                var socResult = await _managedTcp.SendAsync(authResponse.BufferSlice).ConfigureAwait(false);
+                var authResponse = new Socks5AuthResponse(buf, Socks5AuthMethod.LoginAndPassword);
+                var socResult = await _managedTcp.SendAsync(authResponse.BufferSlice, ct).ConfigureAwait(false);
                 if (socResult != SocketError.Success)
                 {
                     return; // Обрыв соединения.
                 }
 
-                var loginPassword = await Socks5LoginPassword.ReceiveAsync(_managedTcp, buf.Memory).ConfigureAwait(false);
+                var loginPassword = await Socks5LoginPassword.ReceiveAsync(_managedTcp, buf).ConfigureAwait(false);
                 if (loginPassword == default)
                 {
                     return; // Обрыв соединения.
                 }
 
-                var authResult = new Socks5AuthResult(buf.Memory, allow: true);
-                socResult = await _managedTcp.SendAsync(authResult.BufferSlice).ConfigureAwait(false);
+                var authResult = new Socks5AuthResult(buf, allow: true);
+                socResult = await _managedTcp.SendAsync(authResult.BufferSlice, ct).ConfigureAwait(false);
                 if (socResult != SocketError.Success)
                 {
                     return; // Обрыв соединения.
                 }
             }
-            else
+            else if (socksAuthRequest.AuthMethods?.Contains(Socks5AuthMethod.NoAuth) == true) // Мы поддерживаем только способ без аутентификации.
             {
-                // Мы поддерживаем только способ без аутентификации.
-                if (socksAuthRequest.AuthMethods.Contains(Socks5AuthMethod.NoAuth))
                 // Отправляем ответ в котором выбрали способ без аутентификации.
+                var authResponse = new Socks5AuthResponse(buf, Socks5AuthMethod.NoAuth);
+                var socResult = await _managedTcp.SendAsync(authResponse.BufferSlice, ct).ConfigureAwait(false);
+                if (socResult != SocketError.Success)
                 {
-                    var authResponse = new Socks5AuthResponse(buf.Memory, Socks5AuthMethod.NoAuth);
-                    var socResult = await _managedTcp.SendAsync(authResponse.BufferSlice).ConfigureAwait(false);
-                    if (socResult != SocketError.Success)
-                    {
-                        return; // Обрав соединения.
-                    }
-                }
-                else
-                // Запрос не поддерживает способ без аутентификации.
-                {
-                    // Не было предложено приемлемого метода.
-                    var authResponse = new Socks5AuthResponse(buf.Memory, Socks5AuthMethod.NotSupported);
-                    await _managedTcp.SendAsync(authResponse.BufferSlice).ConfigureAwait(false);
                     return; // Закрыть соединение.
                 }
             }
+            else // Не было предложено приемлемого метода.
+            {
+                Socks5AuthResponse authResponse = new(buf, Socks5AuthMethod.NotSupported);
+                await _managedTcp.SendAsync(authResponse.BufferSlice, ct).ConfigureAwait(false);
+                return; // Закрыть соединение.
+            }
 
             // Читаем запрос клиента.
-            var socksRequest = await Socks5Request.ReceiveRequest(_managedTcp, buf.Memory).ConfigureAwait(false);
+            var socksRequest = await Socks5Request.ReceiveRequest(_managedTcp, buf, ct).ConfigureAwait(false);
             if (socksRequest == default)
             {
                 return; // Обрыв соединения.
@@ -86,49 +79,44 @@ internal sealed class Socks5Connection(TcpClient tcp, Socks5Listener listener) :
                         try
                         {
                             // Подключиться к запрошенному адресу через ноду.
-                            using (var connectTcpResult = await ConnectAsync(in socksRequest, connectionId).ConfigureAwait(false))
+                            using var connectTcpResult = await ConnectAsync(in socksRequest, connectionId, ct).ConfigureAwait(false);
+
+                            if (connectTcpResult.SocketError != SocketError.Success)
                             {
-                                if (connectTcpResult.SocketError == SocketError.Success)
-                                // Удалённая нода успешно подключилась к запрошенному адресу.
-                                {
-                                    Debug.Assert(connectTcpResult.Socket != null);
-
-                                    var ip = ((IPEndPoint)connectTcpResult.Socket.Client.RemoteEndPoint!).Address;
-
-                                    // Отвечаем клиенту по SOKCS что всё ОК.
-                                    var response = new Socks5Response(ResponseCode.RequestSuccess, ip);
-
-                                    var socErr = await SendResponseAsync(in response, buf.Memory).ConfigureAwait(false);
-                                    if (socErr != SocketError.Success)
-                                    {
-                                        return; // Обрыв.
-                                    }
-
-                                    rentedMemToDispose.Dispose();
-                                    rentedMemToDispose = null;
-
-                                    Interlocked.Increment(ref listener._connectionsCount);
-
-                                    // Не бросает исключения.
-                                    await Proxy.RunAsync(connectionId, _managedTcp, connectTcpResult.Socket).ConfigureAwait(false);
-
-                                    LogDisconnect(in socksRequest, connectionId);
-
-                                    Interlocked.Decrement(ref listener._connectionsCount);
-                                }
-                                else
-                                // Не удалось подключиться к запрошенному адресу.
-                                {
-                                    await SendConnectionRefusedAndDisconnectAsync(buf.Memory, connectTcpResult.SocketError).ConfigureAwait(false);
-                                    return;
-                                }
+                                await SendConnectionRefusedAndDisconnectAsync(buf, connectTcpResult.SocketError, ct).ConfigureAwait(false);
+                                return;
                             }
+
+                            Debug.Assert(connectTcpResult.Socket != null);
+
+                            var ip = ((IPEndPoint)connectTcpResult.Socket.Client.RemoteEndPoint!).Address;
+
+                            // Отвечаем клиенту по SOKCS что всё ОК.
+                            Socks5Response response = new(ResponseCode.RequestSuccess, ip);
+
+                            var socErr = await SendResponseAsync(in response, buf, ct).ConfigureAwait(false);
+                            if (socErr != SocketError.Success)
+                            {
+                                return; // Обрыв.
+                            }
+
+                            ArrayPool<byte>.Shared.Return(buf, clearArray: false);
+                            buf = null;
+                            //rentedMemToDispose.Dispose();
+                            //rentedMemToDispose = null;
+
+                            Interlocked.Increment(ref listener._connectionsCount);
+
+                            await Proxy.RunAsync(connectionId, _managedTcp, connectTcpResult.Socket, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+                            LogDisconnect(in socksRequest, connectionId);
+
+                            Interlocked.Decrement(ref listener._connectionsCount);
                         }
-                        catch (Exception ex)
-                        // Не удалось подключиться к запрошенному адресу.
+                        catch (Exception e) when (!ct.IsCancellationRequested) // Не удалось подключиться к запрошенному адресу.
                         {
-                            Debug.WriteLine(ex);
-                            await SendConnectionRefusedAndDisconnectAsync(buf.Memory).ConfigureAwait(false);
+                            Debug.WriteLine(e);
+                            await SendConnectionRefusedAndDisconnectAsync(buf, ct).ConfigureAwait(false);
                             return;
                         }
                         break;
@@ -141,18 +129,17 @@ internal sealed class Socks5Connection(TcpClient tcp, Socks5Listener listener) :
                     break;
             }
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine(ex);
-            return;
-        }
         finally
         {
-            rentedMemToDispose?.Dispose();
+            if (buf != null)
+            {
+                ArrayPool<byte>.Shared.Return(buf, clearArray: false);
+            }
+            //rentedMemToDispose?.Dispose();
         }
     }
 
-    private static Task<TcpConnectResult> ConnectAsync(in Socks5Request socksRequest, int connectionId)
+    private static Task<TcpConnectResult> ConnectAsync(ref readonly Socks5Request socksRequest, int connectionId, CancellationToken ct)
     {
         switch (socksRequest.Address)
         {
@@ -161,92 +148,69 @@ internal sealed class Socks5Connection(TcpClient tcp, Socks5Listener listener) :
                 {
                     Debug.Assert(socksRequest.IPAddress != null);
 
-                    return ConnectByIpAsync(connectionId, new IPEndPoint(socksRequest.IPAddress, socksRequest.Port));
+                    return ConnectByIp(connectionId, new IPEndPoint(socksRequest.IPAddress, socksRequest.Port), ct);
                 }
             case AddressType.DomainName:
                 {
-                    return ConnectByHostAsync(connectionId, new DnsEndPoint(socksRequest.DomainName!, socksRequest.Port));
+                    return ConnectByHost(connectionId, new DnsEndPoint(socksRequest.DomainName!, socksRequest.Port), ct);
                 }
             default:
-                throw new ArgumentOutOfRangeException(nameof(socksRequest));
+                return ThrowHelper.ThrowArgumentOutOfRange<Task<TcpConnectResult>>(nameof(socksRequest));
         }
     }
 
     /// <exception cref="SocketException"/>
-    private static async Task<TcpConnectResult> ConnectByIpAsync(int connectionId, IPEndPoint endPoint)
+    private static async Task<TcpConnectResult> ConnectByIp(int connectionId, IPEndPoint remoteEP, CancellationToken ct)
     {
-        if (endPoint.IsNotLoopback())
-        {
-            LogDebug(connectionId, $"ConnectIP {endPoint.Address}:{endPoint.Port}");
-
-            var managedTcp = new ManagedTcpSocket(new Socket(SocketType.Stream, ProtocolType.Tcp));
-            try
-            {
-                var socErr = await managedTcp.ConnectAsync(endPoint).ConfigureAwait(false);
-
-                if (socErr == SocketError.Success)
-                {
-                    var refCopy = managedTcp;
-
-                    // Предотвратить Dispose.
-                    managedTcp = null;
-
-                    return new TcpConnectResult(SocketError.Success, refCopy);
-                }
-                else
-                {
-                    return new TcpConnectResult(socErr, null);
-                }
-            }
-            finally
-            {
-                managedTcp?.Dispose();
-            }
-        }
-        else
+        if (remoteEP.IsLoopback())
         {
             LogDebug(connectionId, "Loopback запрещён");
             return new TcpConnectResult(SocketError.HostUnreachable, null);
         }
+
+        LogDebug(connectionId, $"ConnectIP {remoteEP.Address}:{remoteEP.Port}");
+
+        var managedTcp = new ManagedTcpSocket(new Socket(SocketType.Stream, ProtocolType.Tcp));
+        try
+        {
+            var socErr = await managedTcp.ConnectAsync(remoteEP, ct).ConfigureAwait(false);
+
+            return socErr == SocketError.Success
+                ? new TcpConnectResult(SocketError.Success, Exchange(ref managedTcp, null))
+                : new TcpConnectResult(socErr, null);
+        }
+        finally
+        {
+            managedTcp?.Dispose();
+        }
     }
 
     /// <exception cref="SocketException"/>
-    private static async Task<TcpConnectResult> ConnectByHostAsync(int connectionId, DnsEndPoint endPoint)
+    private static async Task<TcpConnectResult> ConnectByHost(int connectionId, DnsEndPoint endPoint, CancellationToken ct)
     {
-        if (endPoint.IsNotLoopback())
-        {
-            LogDebug(connectionId, $"ConnectHost {endPoint.Host}:{endPoint.Port}");
-
-            var managedTcp = new ManagedTcpSocket(new Socket(SocketType.Stream, ProtocolType.Tcp));
-            try
-            {
-                var socErr = await managedTcp.ConnectAsync(endPoint).ConfigureAwait(false);
-                if (socErr == SocketError.Success)
-                {
-                    var refCopy = managedTcp;
-
-                    // Предотвратить Dispose.
-                    managedTcp = null;
-
-                    return new TcpConnectResult(SocketError.Success, refCopy);
-                }
-                else
-                {
-                    return new TcpConnectResult(socErr, null);
-                }
-            }
-            finally
-            {
-                managedTcp?.Dispose();
-            }
-        }
-        else
+        if (endPoint.IsLoopback())
         {
             return new TcpConnectResult(SocketError.HostUnreachable, null);
         }
+
+        LogDebug(connectionId, $"ConnectHost {endPoint.Host}:{endPoint.Port}");
+
+        var managedTcp = new ManagedTcpSocket(new Socket(SocketType.Stream, ProtocolType.Tcp));
+        try
+        {
+            var socErr = await managedTcp.ConnectAsync(endPoint, ct).ConfigureAwait(false);
+
+            return socErr == SocketError.Success
+                ? new TcpConnectResult(SocketError.Success, Exchange(ref managedTcp, null))
+                : new TcpConnectResult(socErr, null);
+        }
+        finally
+        {
+            managedTcp?.Dispose();
+        }
     }
 
-    private async ValueTask SendConnectionRefusedAndDisconnectAsync(Memory<byte> buffer, SocketError socketError)
+    private async ValueTask SendConnectionRefusedAndDisconnectAsync(Memory<byte> buffer, SocketError socketError, CancellationToken ct)
     {
         var code = socketError switch
         {
@@ -254,41 +218,36 @@ internal sealed class Socks5Connection(TcpClient tcp, Socks5Listener listener) :
             _ => ResponseCode.HostUnreachable,
         };
 
-        var errResp = new Socks5Response(code, IPAddress.Any);
-        var socErr = await SendResponseAsync(in errResp, buffer).ConfigureAwait(false);
+        Socks5Response errResp = new(code, IPAddress.Any);
+        var socErr = await SendResponseAsync(in errResp, buffer, ct).ConfigureAwait(false);
         if (socErr == SocketError.Success)
         {
-            await WaitForDisconnectAsync(buffer).ConfigureAwait(false);
+            await WaitForDisconnectAsync(buffer, timeoutMsec: 2000, ct).ConfigureAwait(false);
         }
     }
 
-    private async ValueTask SendConnectionRefusedAndDisconnectAsync(Memory<byte> buffer)
+    private async ValueTask SendConnectionRefusedAndDisconnectAsync(Memory<byte> buffer, CancellationToken ct)
     {
-        var errResp = new Socks5Response(ResponseCode.ConnectionRefused, IPAddress.Any);
-        var socErr = await SendResponseAsync(in errResp, buffer).ConfigureAwait(false);
+        Socks5Response errResp = new(ResponseCode.ConnectionRefused, IPAddress.Any);
+        var socErr = await SendResponseAsync(in errResp, buffer, ct).ConfigureAwait(false);
         if (socErr == SocketError.Success)
         {
-            await WaitForDisconnectAsync(buffer).ConfigureAwait(false);
+            await WaitForDisconnectAsync(buffer, timeoutMsec: 2000, ct).ConfigureAwait(false);
         }
     }
 
-    private async ValueTask WaitForDisconnectAsync(Memory<byte> buffer)
+    private async ValueTask WaitForDisconnectAsync(Memory<byte> buffer, int timeoutMsec, CancellationToken ct)
     {
-        using (var cts = new CancellationTokenSource(1000))
-        using (cts.Token.Register(s => ((IDisposable)s!).Dispose(), _managedTcp, false))
-        {
-            try
-            {
-                await _managedTcp.ReceiveAsync(buffer).ConfigureAwait(false);
-            }
-            catch { }
-        }
+        using var cts = new CancellationTokenSource(timeoutMsec);
+        using var _ = cts.Token.Register(s => ((IDisposable)s!).Dispose(), _managedTcp, useSynchronizationContext: false);
+
+        await ((Task)_managedTcp.ReceiveAsync(buffer, ct).AsTask()).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     }
 
-    private ValueTask<SocketError> SendResponseAsync(in Socks5Response socksResponse, Memory<byte> buffer)
+    private ValueTask<SocketError> SendResponseAsync(ref readonly Socks5Response socksResponse, Memory<byte> buffer, CancellationToken ct)
     {
         var span = socksResponse.Write(buffer);
-        return _managedTcp.SendAsync(span);
+        return _managedTcp.SendAsync(span, ct);
     }
 
     public void Dispose()

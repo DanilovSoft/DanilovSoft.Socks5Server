@@ -3,30 +3,26 @@ using System.Net.Sockets;
 
 internal static class ExtensionMethods
 {
-    /// <summary>
-    /// 
-    /// </summary>
     /// <exception cref="SocketException"/>
-    //[DebuggerStepThrough]
     public static Exception ToException(this SocketError socketError)
     {
         return new SocketException((int)socketError);
     }
 
-    public static ValueTask<SocketReceiveResult> ReceiveBlockAsync(this ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken cancellationToken = default)
+    public static ValueTask<SocketReceiveResult> ReceiveExactAsync(this ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         var count = buffer.Length;
         while (buffer.Length > 0)
         {
-            var t = managedTcp.ReceiveAsync(buffer, cancellationToken);
-            if (t.IsCompletedSuccessfully)
+            var task = managedTcp.ReceiveAsync(buffer, cancellationToken);
+            if (task.IsCompletedSuccessfully)
             {
-                var result = t.Result;
+                var result = task.Result;
 
                 if (result.BytesReceived > 0 && result.ErrorCode == SocketError.Success)
                 {
                     // Уменьшить буфер на столько, сколько приняли.
-                    buffer = buffer.Slice(result.BytesReceived);
+                    buffer = buffer[result.BytesReceived..];
                 }
                 else
                 {
@@ -35,22 +31,22 @@ internal static class ExtensionMethods
             }
             else
             {
-                return WaitForReceiveBlockAsync(t, count, managedTcp, buffer, cancellationToken);
+                return WaitForReceiveBlockAsync(task, count, managedTcp, buffer, cancellationToken);
             }
         }
 
         // Всё выполнено синхронно.
         return new ValueTask<SocketReceiveResult>(new SocketReceiveResult(count, SocketError.Success));
 
-        static async ValueTask<SocketReceiveResult> WaitForReceiveBlockAsync(ValueTask<SocketReceiveResult> t, int count, 
-            ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken cancellationToken)
+        static async ValueTask<SocketReceiveResult> WaitForReceiveBlockAsync(ValueTask<SocketReceiveResult> task, int count, 
+            ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken ct)
         {
-            var result = await t.ConfigureAwait(false);
+            var result = await task.ConfigureAwait(false);
 
             if (result.BytesReceived > 0 && result.ErrorCode == SocketError.Success)
             {
                 // Уменьшить буфер на сколько приняли.
-                buffer = buffer.Slice(result.BytesReceived);
+                buffer = buffer[result.BytesReceived..];
 
                 if (buffer.Length == 0)
                 {
@@ -59,7 +55,7 @@ internal static class ExtensionMethods
                 else
                 // Прочитали всё что необходимо.
                 {
-                    return await ReceiveBlockAsync(managedTcp, buffer, cancellationToken).ConfigureAwait(false);
+                    return await ReceiveExactAsync(managedTcp, buffer, ct).ConfigureAwait(false);
                 }
             }
             else

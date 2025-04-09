@@ -1,3 +1,1 @@
-﻿using System.Runtime.CompilerServices;
-
-[assembly: InternalsVisibleTo("ConsoleAppTest")]
+﻿[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("ConsoleAppTest")]

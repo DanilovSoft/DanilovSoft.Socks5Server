@@ -23,12 +23,12 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
     public string? DomainName { get; }
     public ushort Port { get; }
 
-    internal static async ValueTask<Socks5Request> ReceiveRequest(ManagedTcpSocket managedTcp, Memory<byte> buffer)
+    internal static async ValueTask<Socks5Request> ReceiveRequest(ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken ct = default)
     {
         Debug.Assert(buffer.Length >= MaximumSize);
 
         // Как минимум должно быть 4 байта.
-        var rcvResult = await managedTcp.ReceiveBlockAsync(buffer[..4]).ConfigureAwait(false);
+        var rcvResult = await managedTcp.ReceiveExactAsync(buffer[..4], ct).ConfigureAwait(false);
         if (!rcvResult.ReceiveSuccess)
         {
             return default;
@@ -41,7 +41,7 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
         }
 
         var command = (Socks5Command)buffer.Span[1];
-        if (!Enum.IsDefined(typeof(Socks5Command), command))
+        if (!Enum.IsDefined(command))
         {
             throw new InvalidOperationException("Ошибка протокола SOCKS 5");
         }
@@ -65,7 +65,7 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
             case AddressType.IPv4:
                 {
                     var ipv4span = buffer[..4];
-                    rcvResult = await managedTcp.ReceiveBlockAsync(ipv4span).ConfigureAwait(false);
+                    rcvResult = await managedTcp.ReceiveExactAsync(ipv4span, ct).ConfigureAwait(false);
                     if (!rcvResult.ReceiveSuccess)
                     {
                         return default;
@@ -81,7 +81,7 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
             case AddressType.DomainName:
                 {
                     // 1 байт с длиной строки.
-                    rcvResult = await managedTcp.ReceiveAsync(buffer[..1]).ConfigureAwait(false);
+                    rcvResult = await managedTcp.ReceiveAsync(buffer[..1], ct).ConfigureAwait(false);
                     if (!rcvResult.ReceiveSuccess)
                     {
                         return default;
@@ -93,7 +93,7 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
                     var hostSpan = buffer.Slice(1, strLen);
 
                     // Читаем всю строку.
-                    rcvResult = await managedTcp.ReceiveBlockAsync(hostSpan).ConfigureAwait(false);
+                    rcvResult = await managedTcp.ReceiveExactAsync(hostSpan, ct).ConfigureAwait(false);
                     if (!rcvResult.ReceiveSuccess)
                     {
                         return default;
@@ -109,7 +109,7 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
             case AddressType.IPv6:
                 {
                     var ipv6span = buffer[..16];
-                    rcvResult = await managedTcp.ReceiveBlockAsync(ipv6span).ConfigureAwait(false);
+                    rcvResult = await managedTcp.ReceiveExactAsync(ipv6span, ct).ConfigureAwait(false);
                     if (!rcvResult.ReceiveSuccess)
                     {
                         return default;
@@ -128,7 +128,7 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
 
         // Последний сегмент — 2 байта, номер порта.
         var portSpan = buffer[..2];
-        rcvResult = await managedTcp.ReceiveBlockAsync(portSpan).ConfigureAwait(false);
+        rcvResult = await managedTcp.ReceiveExactAsync(portSpan, ct).ConfigureAwait(false);
         if (!rcvResult.ReceiveSuccess)
         {
             return default;
@@ -162,7 +162,7 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
         {
             Command = (Socks5Command)span[1];
 
-            if (Enum.IsDefined(typeof(Socks5Command), Command))
+            if (Enum.IsDefined(Command))
             {
                 // Зарезервированный байт, должен быть 0x00
                 if (span[2] == 0)

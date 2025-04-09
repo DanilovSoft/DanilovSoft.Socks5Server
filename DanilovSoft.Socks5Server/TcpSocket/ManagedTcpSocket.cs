@@ -12,88 +12,40 @@ public sealed class ManagedTcpSocket : IDisposable
     private readonly AwaitableSocketAsyncEventArgs _receiveArgs;
     private readonly AwaitableSocketAsyncEventArgs _sendArgs;
     private readonly Socket _socket;
-    public Socket Client => _socket;
     private int _disposed;
     private bool IsDisposed => _disposed != 0;
 
     public ManagedTcpSocket(Socket socket)
     {
         _socket = socket;
-        //NoDelay = DefaultNoDelay;
-
         _receiveArgs = new AwaitableSocketAsyncEventArgs();
         _sendArgs = new AwaitableSocketAsyncEventArgs();
     }
 
-#if NETSTANDARD2_0 || NET46
+    public Socket Client => _socket;
 
-    /// <summary>
-    /// Использует MemoryMarshal.TryGetArray.
-    /// </summary>
-    /// <exception cref="ObjectDisposedException"/>
-    public ValueTask<SocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken)
-    {
-        if (MemoryMarshal.TryGetArray(buffer, out ArraySegment<byte> segment))
-        {
-            return InnerReceiveAsync(segment.Array, segment.Offset, segment.Count, cancellationToken);
-        }
-        else
-            throw new NotSupportedException(Resources.Strings.MemoryGetArray);
-    }
-
-    /// <summary>
-    /// Использует MemoryMarshal.TryGetArray.
-    /// </summary>
-    /// <exception cref="SocketException"/>
-    /// <exception cref="ObjectDisposedException"/>
-    public ValueTask<int> ReadAsync(Memory<byte> memory, CancellationToken cancellationToken)
-    {
-        if (MemoryMarshal.TryGetArray<byte>(memory, out var segment))
-        {
-            return ReadAsync(segment.Array, segment.Offset, segment.Count, cancellationToken);
-        }
-        else
-            throw new NotSupportedException(Resources.Strings.MemoryGetArray);
-    }
-
-    /// <summary>
-    /// Использует MemoryMarshal.TryGetArray.
-    /// </summary>
-    /// <exception cref="ObjectDisposedException"/>
-    public ValueTask<SocketError> SendAsync(ReadOnlyMemory<byte> memory, CancellationToken cancellationToken)
-    {
-        if (MemoryMarshal.TryGetArray(memory, out var segment))
-        {
-            return SendAsync(segment.Array, segment.Offset, segment.Count, cancellationToken);
-        }
-        else
-            throw new NotSupportedException(Resources.Strings.MemoryGetArray);
-    }
-#else
     /// <exception cref="ObjectDisposedException"/>
     public ValueTask<SocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        if (!IsDisposed)
+        if (IsDisposed)
         {
-            if (!cancellationToken.IsCancellationRequested)
+            return DisposedValueTask<SocketReceiveResult>();
+        }
+
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            if (_receiveArgs.Reserve())
             {
-                if (_receiveArgs.Reserve())
-                {
-                    return _receiveArgs.ReceiveAsync(_socket, buffer);
-                }
-                else
-                {
-                    return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
-                }
+                return _receiveArgs.ReceiveAsync(_socket, buffer);
             }
             else
             {
-                return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
+                return new ValueTask<SocketReceiveResult>(task: Task.FromException<SocketReceiveResult>(SimultaneouslyOperationException()));
             }
         }
         else
         {
-            return DisposedValueTask<SocketReceiveResult>();
+            return new ValueTask<SocketReceiveResult>(Task.FromCanceled<SocketReceiveResult>(cancellationToken));
         }
     }
 
@@ -123,7 +75,7 @@ public sealed class ManagedTcpSocket : IDisposable
             return DisposedValueTask<SocketError>();
         }
     }
-#endif
+
     /// <exception cref="ObjectDisposedException"/>
     public ValueTask<SocketReceiveResult> ReceiveAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
@@ -278,31 +230,38 @@ public sealed class ManagedTcpSocket : IDisposable
     }
 
     /// <exception cref="ObjectDisposedException"/>
-    public Task<SocketError> ConnectAsync(EndPoint endPoint)
+    public Task<SocketError> ConnectAsync(EndPoint remoteEP, CancellationToken ct = default)
     {
-        if (!IsDisposed)
-        {
-            // Можем использовать слот чтения или отправки.
-            var saea = _sendArgs;
-
-            // Слот должен быть свободен потому что подключение это самая первая операция (только для TCP).
-            if (!saea.Reserve())
-            {
-                Debug.Assert(false);
-                return Task.FromException<SocketError>(SimultaneouslyOperationException());
-            }
-
-            saea.RemoteEndPoint = endPoint;
-            return saea.ConnectAsync(_socket).AsTask();
-        }
-        else
+        if (IsDisposed)
         {
             return Task.FromException<SocketError>(DisposedException());
+        }
+
+        // Можем использовать слот чтения или отправки.
+        var socketArgs = _receiveArgs;
+
+        // Слот должен быть свободен потому что подключение это самая первая операция (только для TCP).
+        if (!socketArgs.Reserve())
+        {
+            Debug.Assert(false);
+            return Task.FromException<SocketError>(SimultaneouslyOperationException());
+        }
+
+        socketArgs.RemoteEndPoint = remoteEP;
+
+        return Connect(socketArgs, ct);
+    }
+
+    private async Task<SocketError> Connect(AwaitableSocketAsyncEventArgs socketArgs, CancellationToken ct)
+    {
+        using (ct.UnsafeRegister(static s => Socket.CancelConnectAsync((AwaitableSocketAsyncEventArgs)s!), socketArgs))
+        {
+            return await socketArgs.ConnectAsync(_socket).ConfigureAwait(false);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private ValueTask<T> DisposedValueTask<T>() => new ValueTask<T>(Task.FromException<T>(DisposedException()));
+    private ValueTask<T> DisposedValueTask<T>() => new(Task.FromException<T>(DisposedException()));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ObjectDisposedException DisposedException() => ThrowHelper.ObjectDisposedException(GetType().FullName);
@@ -323,9 +282,9 @@ public sealed class ManagedTcpSocket : IDisposable
     private sealed class AwaitableSocketAsyncEventArgs : SocketAsyncEventArgs, IValueTaskSource<SocketError>, IValueTaskSource<SocketReceiveResult>
     {
         /// <summary>Sentinel object used to indicate that the operation has completed prior to OnCompleted being called.</summary>
-        private static readonly Action<object?> s_completedSentinel = new Action<object?>(state => throw new Exception(nameof(s_completedSentinel)));
+        private static readonly Action<object?> s_completedSentinel = new(static state => throw new Exception(nameof(s_completedSentinel)));
         /// <summary>Sentinel object used to indicate that the instance is available for use.</summary>
-        private static readonly Action<object?> s_availableSentinel = new Action<object?>(state => throw new Exception(nameof(s_availableSentinel)));
+        private static readonly Action<object?> s_availableSentinel = new(static state => throw new Exception(nameof(s_availableSentinel)));
         /// <summary>
         /// <see cref="s_availableSentinel"/> if the object is available for use, after GetResult has been called on a previous use.
         /// null if the operation has not completed.
@@ -386,9 +345,6 @@ public sealed class ManagedTcpSocket : IDisposable
             }
         }
 
-#if NETSTANDARD2_0 || NET46
-
-#else
         internal ValueTask<SocketReceiveResult> ReceiveAsync(Socket socket, Memory<byte> buffer)
         {
             Debug.Assert(Volatile.Read(ref _continuation) == null, $"Expected null continuation to indicate reserved for use");
@@ -403,7 +359,6 @@ public sealed class ManagedTcpSocket : IDisposable
             else
             {
                 Release();
-
                 return new ValueTask<SocketReceiveResult>(new SocketReceiveResult(BytesTransferred, SocketError));
             }
         }
@@ -432,7 +387,6 @@ public sealed class ManagedTcpSocket : IDisposable
                 return new ValueTask<SocketError>(SocketError);
             }
         }
-#endif
 
         /// <exception cref="Exception"/>
         internal ValueTask<SocketError> ConnectAsync(Socket socket)
@@ -443,6 +397,7 @@ public sealed class ManagedTcpSocket : IDisposable
             {
                 // Tcp всегда завершается асинхронно.
                 // Синхронно может случиться NoBufferSpaceAvailable.
+
                 if (socket.ConnectAsync(this))
                 {
                     // Может случиться AddressAlreadyInUse если занять все клиентские порты.
@@ -455,11 +410,9 @@ public sealed class ManagedTcpSocket : IDisposable
                 throw;
             }
 
-            var error = SocketError;
-
+            var socketError = SocketError;
             Release();
-
-            return new ValueTask<SocketError>(result: error);
+            return new ValueTask<SocketError>(result: socketError);
         }
 
         internal ValueTask<SocketError> SendAsync(Socket socket, byte[] buffer, int offset, int count)
@@ -643,12 +596,11 @@ public sealed class ManagedTcpSocket : IDisposable
             }
         }
 
-        private void ThrowIncorrectTokenException() =>
+        private static void ThrowIncorrectTokenException() =>
             throw new InvalidOperationException("Произошла попытка одновременного выполнения операции чтения или записи на сокете.");
 
-        private void ThrowMultipleContinuationsException() => throw new InvalidOperationException("Multiple continuations not allowed.");
+        private static void ThrowMultipleContinuationsException() => throw new InvalidOperationException("Multiple continuations not allowed.");
     }
 
-    private static InvalidOperationException SimultaneouslyOperationException()
-            => new InvalidOperationException("Operation already in progress.");
+    private static InvalidOperationException SimultaneouslyOperationException() => new("Operation already in progress.");
 }

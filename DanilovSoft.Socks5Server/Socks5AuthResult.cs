@@ -17,6 +17,6 @@ internal readonly struct Socks5AuthResult
         outputBuffer.Span[0] = 1;
         outputBuffer.Span[1] = (byte)(allow ? 0 : 1);
 
-        BufferSlice = outputBuffer.Slice(0, 2);
+        BufferSlice = outputBuffer[..2];
     }
 }

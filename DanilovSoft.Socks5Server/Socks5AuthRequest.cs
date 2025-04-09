@@ -20,12 +20,12 @@ internal readonly struct Socks5AuthRequest : IEquatable<Socks5AuthRequest>
         AuthMethods = authMethods;
     }
 
-    public static async ValueTask<Socks5AuthRequest> ReceiveAsync(ManagedTcpSocket managedTcp, Memory<byte> buffer)
+    public static async ValueTask<Socks5AuthRequest> ReceiveAsync(ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken ct = default)
     {
         Debug.Assert(buffer.Length >= MaximumSize);
 
         // Как минимум должно быть 2 байта.
-        var rcvResult = await managedTcp.ReceiveBlockAsync(buffer[..2]).ConfigureAwait(false);
+        var rcvResult = await managedTcp.ReceiveExactAsync(buffer[..2], ct).ConfigureAwait(false);
         if (!rcvResult.ReceiveSuccess)
         {
             return new Socks5AuthRequest(authMethods: null);
@@ -43,7 +43,7 @@ internal readonly struct Socks5AuthRequest : IEquatable<Socks5AuthRequest>
         // Номера методов аутентификации, переменная длина, 1 байт для каждого поддерживаемого метода.
         var authSpan = buffer.Slice(2, authCount);
 
-        rcvResult = await managedTcp.ReceiveBlockAsync(authSpan).ConfigureAwait(false);
+        rcvResult = await managedTcp.ReceiveExactAsync(authSpan, ct).ConfigureAwait(false);
         if (!rcvResult.ReceiveSuccess)
         {
             return new Socks5AuthRequest(authMethods: null);

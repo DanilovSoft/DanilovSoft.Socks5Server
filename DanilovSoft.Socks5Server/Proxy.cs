@@ -9,7 +9,8 @@ internal sealed class Proxy
 {
     private const int ProxyBufferSize = 4096;
     public int ConnectionId { get; }
-    private readonly ManagedTcpSocket Socket;
+    private readonly ManagedTcpSocket _socket;
+    private readonly CancellationToken _cancellationToken;
     private int _socketCloseRequestCount;
     private Proxy _other = null!;
 
@@ -20,35 +21,38 @@ internal sealed class Proxy
     private volatile bool _disconnect;
 #endif
 
-    public Proxy(ManagedTcpSocket socket, int connectionId)
+    public Proxy(ManagedTcpSocket socket, int connectionId, CancellationToken cancellationToken)
     {
-        Socket = socket;
+        _socket = socket;
         ConnectionId = connectionId;
+        _cancellationToken = cancellationToken;
     }
 
-    /// <remarks>Не бросает исключения.</remarks>
-    public static Task RunAsync(int connectionId, ManagedTcpSocket socketA, ManagedTcpSocket socketB)
+    public static Task RunAsync(int connectionId, ManagedTcpSocket socketA, ManagedTcpSocket socketB, CancellationToken ct = default)
     {
-        var proxy1 = new Proxy(socketA, connectionId);
-        var proxy2 = new Proxy(socketB, connectionId);
+        var proxy1 = new Proxy(socketA, connectionId, ct);
+        var proxy2 = new Proxy(socketB, connectionId, ct);
 
         proxy1._other = proxy2;
         proxy2._other = proxy1;
 
-        var task1 = Task.Factory.StartNew(proxy1.ReceiveAsync, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
-        var task2 = Task.Factory.StartNew(proxy2.ReceiveAsync, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default).Unwrap();
+        var task1 = Task.Factory.StartNew(static proxy1 => ((Proxy)proxy1!).RunAsync(), proxy1, ct, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default).Unwrap();
+        var task2 = Task.Factory.StartNew(static proxy2 => ((Proxy)proxy2!).RunAsync(), proxy2, ct, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default).Unwrap();
 
         return Task.WhenAll(task1, task2);
     }
 
-    private async Task ReceiveAsync()
+    private Task RunAsync() => Run(_cancellationToken);
+
+    private async Task Run(CancellationToken ct)
     {
         Debug.Assert(_other != null);
 
         // Арендуем память на длительное время(!).
         // TO TNINK возможно лучше создать свой пул что-бы не истощить общий 
         // в случае когда мы не одни его используем.
-        var rent = MemoryPool<byte>.Shared.Rent(ProxyBufferSize);
+        byte[] rent = ArrayPool<byte>.Shared.Rent(ProxyBufferSize);
+
         try
         {
             while (true)
@@ -56,9 +60,9 @@ internal sealed class Proxy
                 SocketReceiveResult rcv;
                 try
                 {
-                    rcv = await Socket.ReceiveAsync(rent.Memory).ConfigureAwait(false);
+                    rcv = await _socket.ReceiveAsync(rent, ct).ConfigureAwait(false);
                 }
-                catch
+                catch when (!ct.IsCancellationRequested)
                 {
                     ShutdownReceiveOtherAndTryCloseSelf(); // Отправлять в другой сокет больше не будем.
                     return;
@@ -69,9 +73,9 @@ internal sealed class Proxy
                     SocketError sendError;
                     try
                     {
-                        sendError = await _other.Socket.SendAsync(rent.Memory.Slice(0, rcv.BytesReceived)).ConfigureAwait(false);
+                        sendError = await _other._socket.SendAsync(rent.AsMemory(..rcv.BytesReceived), ct).ConfigureAwait(false);
                     }
-                    catch
+                    catch when (!ct.IsCancellationRequested)
                     {
                         ShutdownReceiveOtherAndTryCloseSelf(); // Читать из своего сокета больше не будем.
                         return;
@@ -84,8 +88,7 @@ internal sealed class Proxy
                         return;
                     }
                 }
-                else
-                // tcp соединение закрылось на приём.
+                else // tcp соединение закрылось на приём.
                 {
                     if (rcv.BytesReceived == 0 && rcv.ErrorCode == SocketError.Success)
                     // Грациозное закрытие —> инициатором закрытия была удалённая сторона tcp.
@@ -111,7 +114,7 @@ internal sealed class Proxy
 
                             // Делаем грязный обрыв у другого потока.
                             _other.Disconnect();
-                            
+
                             return;
                         }
                     }
@@ -120,7 +123,7 @@ internal sealed class Proxy
         }
         finally
         {
-            rent.Dispose();
+            ArrayPool<byte>.Shared.Return(rent, clearArray: false);
             TryClose();
         }
     }
@@ -159,7 +162,7 @@ internal sealed class Proxy
         try
         {
             // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
-            Socket.Client.Close(timeout: 0);
+            _socket.Client.Close(timeout: 0);
 
             // Альтернативный способ + Close без таймаута.
             //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
@@ -170,11 +173,11 @@ internal sealed class Proxy
 
     private void Disconnect()
     {
-        Socket.Client.LingerState = new LingerOption(enable: true, seconds: 0);
+        _socket.Client.LingerState = new LingerOption(enable: true, seconds: 0);
         try
         {
             // Ноль спровоцирует команду RST и удалённая сторона получит обрыв.
-            Socket.Client.Disconnect(reuseSocket: false);
+            _socket.Client.Disconnect(reuseSocket: false);
 
             // Альтернативный способ + Close без таймаута.
             //socketTo.LingerState = new LingerOption(enable: true, seconds: 0);
@@ -190,10 +193,10 @@ internal sealed class Proxy
     /// <remarks>Не бросает исключения.</remarks>
     private void ShutdownReceive()
     {
-        Debug.Assert(Socket != null);
+        Debug.Assert(_socket != null);
         try
         {
-            Socket.Client.Shutdown(SocketShutdown.Receive);
+            _socket.Client.Shutdown(SocketShutdown.Receive);
         }
         catch { }
 
@@ -206,7 +209,7 @@ internal sealed class Proxy
     {
         try
         {
-            Socket.Client.Shutdown(SocketShutdown.Send);
+            _socket.Client.Shutdown(SocketShutdown.Send);
         }
         catch (ObjectDisposedException)
         {

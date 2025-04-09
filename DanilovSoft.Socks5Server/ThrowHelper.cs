@@ -16,6 +16,13 @@ internal static class ThrowHelper
 
     /// <exception cref="ArgumentOutOfRangeException"/>
     [DoesNotReturn]
+    internal static T ThrowArgumentOutOfRange<T>(string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(paramName);
+    }
+
+    /// <exception cref="ArgumentOutOfRangeException"/>
+    [DoesNotReturn]
     internal static void ThrowArgumentOutOfRange(string? paramName, string? message)
     {
         throw new ArgumentOutOfRangeException(paramName, message);

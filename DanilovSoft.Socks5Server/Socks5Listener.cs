@@ -8,46 +8,52 @@ public sealed class Socks5Listener : IDisposable
     private readonly TcpListener _tcpListener;
     internal int _connectionsCount;
     internal int _connectionIdSeq;
-    public int Port { get; }
 
-    public Socks5Listener(int listenPort)
+    public Socks5Listener(int listenPort = 0)
     {
-        _tcpListener = new TcpListener(IPAddress.Any, listenPort);
-        _tcpListener.Start();
-        Port = ((IPEndPoint)_tcpListener.LocalEndpoint).Port;
-    }
-
-    public void Dispose() => _tcpListener.Stop();
-
-    public async Task ListenAsync(CancellationToken cancellationToken = default)
-    {
-        using var _ = cancellationToken.Register(s => ((IDisposable)s!).Dispose(), this);
-
-        while (true)
+        TcpListener? tcpListener = null;
+        try
         {
-            TcpClient tcp;
-            try
-            {
-                tcp = await _tcpListener.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
-            {
-                // Нормальная остановка с помощью токена.
-                throw new OperationCanceledException($"{nameof(Socks5Listener)} успешно остановлен по запросу пользователя", cancellationToken);
-            }
-            ThreadPool.UnsafeQueueUserWorkItem(ProcessConnection, tcp, preferLocal: false);
+            tcpListener = new(IPAddress.Any, listenPort);
+            tcpListener.Start();
+            Port = ((IPEndPoint)tcpListener.LocalEndpoint).Port;
+            _tcpListener = Exchange(ref tcpListener, null);
+        }
+        finally
+        {
+            tcpListener?.Dispose();
         }
     }
 
-    private async void ProcessConnection(TcpClient tcp)
+    public int Port { get; }
+
+    public void Dispose()
+    {
+        _tcpListener.Dispose();
+    }
+
+    public async Task ListenAsync(CancellationToken ct = default)
+    {
+        while (true)
+        {
+            TcpClient tcpClient;
+            try
+            {
+                tcpClient = await _tcpListener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException) when (ct.IsCancellationRequested) // Нормальная остановка с помощью токена.
+            {
+                throw new OperationCanceledException($"{nameof(Socks5Listener)} успешно остановлен по запросу пользователя", ct);
+            }
+
+            ThreadPool.UnsafeQueueUserWorkItem(static s => s.ThisRef.ProcessConnection(s.tcpClient, s.ct), state: (ThisRef: this, tcpClient, ct), preferLocal: false);
+        }
+    }
+
+    private async void ProcessConnection(TcpClient tcp, CancellationToken ct)
     {
         using var connection = new Socks5Connection(tcp, this);
-        //connection.ConnectionOpened += Connection_ConnectionOpened;
-        //connection.ConnectionClosed += Connection_ConnectionClosed;
-
-        await connection.ProcessRequestsAsync().ConfigureAwait(false);
-
-        //connection.ConnectionOpened -= Connection_ConnectionOpened;
-        //connection.ConnectionClosed -= Connection_ConnectionClosed;
+        
+        await connection.ProcessRequestsAsync(ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     }
 }

@@ -1,18 +1,14 @@
 ﻿using Microsoft.Extensions.Configuration;
 using System.Diagnostics.CodeAnalysis;
-using System.Net;
-using System.Net.Sockets;
 
 namespace DanilovSoft.Socks5Server;
 
 class Program
 {
-    public static IConfigurationRoot? configuration;
-
     [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.GetValue<T>(String)")]
     private static async Task Main(string[] args)
     {
-        var config = new ConfigurationBuilder();
+        ConfigurationBuilder config = new();
 
         var baseDir = Directory.GetParent(AppContext.BaseDirectory);
         if (baseDir != null)
@@ -20,67 +16,31 @@ class Program
             config.SetBasePath(baseDir.FullName);
         }
 
-        configuration = config
+        var configuration = config
             .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
             .AddEnvironmentVariables()
             .AddCommandLine(args)
             .Build();
 
-        //TestShutdown();
+        int port = configuration.GetValue<int>("Port");
 
-        var port = configuration.GetValue<int>("Port");
-        //if (Environment.UserInteractive)
-        //{
-        //    using (var listener = new Socks5Listener(port))
-        //    {
-        //        Console.WriteLine($"Port: {listener.Port}");
-        //        Task task = listener.ListenAsync(default);
-
-        //        int left = Console.CursorLeft;
-        //        int top = Console.CursorTop;
-        //        while (!task.IsCompleted)
-        //        {
-        //            Console.SetCursorPosition(left, top);
-        //            Console.WriteLine($"Connections: {listener.ConnectionsCount.ToString().PadRight(10)}");
-        //            await Task.Delay(200);
-        //        }
-        //    }
-        //}
-        //else
+        CancellationTokenSource cts = new();
+        CancellationToken cancellationToken = cts.Token;
+        Console.CancelKeyPress += (_, e) =>
         {
-            using (var listener = new Socks5Listener(port))
-            {
-                Console.WriteLine($"Listening port {listener.Port}");
-                await listener.ListenAsync(CancellationToken.None);
-            }
-        }
+            Console.WriteLine("Canceling...");
+            cts.Cancel();
+            e.Cancel = true;
+        };
+
+        await ListenAsync(port, cancellationToken);
     }
 
-    //private static void TestShutdown()
-    //{
-    //    Socket tcp = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-    //    ManagedTcpSocket mTcp = new(tcp);
-    //    mTcp.Client.Connect("google.com", 80);
-
-    //    DelayShutdown(tcp);
-
-    //    SocketReceiveResult n;
-    //    try
-    //    {
-    //        n = mTcp.ReceiveAsync(new byte[1024]).AsTask().Result;
-    //    }
-    //    catch (Exception)
-    //    {
-
-    //    }
-    //}
-
-    static void DelayShutdown(Socket tcp)
+    private static async Task ListenAsync(int port, CancellationToken ct)
     {
-        ThreadPool.QueueUserWorkItem(delegate
-        {
-            Thread.Sleep(5_000);
-            tcp.Disconnect(false);
-        });
+        using var listener = new Socks5Listener(port);
+        Console.WriteLine($"Listening port {listener.Port}");
+
+        await listener.ListenAsync(ct);
     }
 }

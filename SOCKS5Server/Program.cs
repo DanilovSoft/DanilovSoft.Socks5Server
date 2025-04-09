@@ -33,7 +33,14 @@ class Program
             e.Cancel = true;
         };
 
-        await ListenAsync(port, cancellationToken);
+        try
+        {
+            await ListenAsync(port, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
     }
 
     private static async Task ListenAsync(int port, CancellationToken ct)

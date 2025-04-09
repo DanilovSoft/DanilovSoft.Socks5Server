@@ -1,14 +1,13 @@
 ﻿using System.Buffers;
 using System.Diagnostics;
-using System.Net;
 using System.Net.Sockets;
+using DanilovSoft.Socks5Server.TcpSocket;
 
 namespace DanilovSoft.Socks5Server;
 
 internal sealed class Proxy
 {
     private const int ProxyBufferSize = 4096;
-    public int ConnectionId { get; }
     private readonly ManagedTcpSocket _socket;
     private readonly CancellationToken _cancellationToken;
     private int _socketCloseRequestCount;
@@ -21,17 +20,19 @@ internal sealed class Proxy
     private volatile bool _disconnect;
 #endif
 
-    public Proxy(ManagedTcpSocket socket, int connectionId, CancellationToken cancellationToken)
+    public Proxy(ManagedTcpSocket socket, CancellationToken cancellationToken)
     {
         _socket = socket;
-        ConnectionId = connectionId;
+        //ConnectionId = connectionId;
         _cancellationToken = cancellationToken;
     }
 
-    public static Task RunAsync(int connectionId, ManagedTcpSocket socketA, ManagedTcpSocket socketB, CancellationToken ct = default)
+    //public int ConnectionId { get; }
+
+    public static Task RunAsync(ManagedTcpSocket socketA, ManagedTcpSocket socketB, CancellationToken ct = default)
     {
-        var proxy1 = new Proxy(socketA, connectionId, ct);
-        var proxy2 = new Proxy(socketB, connectionId, ct);
+        var proxy1 = new Proxy(socketA, ct);
+        var proxy2 = new Proxy(socketB, ct);
 
         proxy1._other = proxy2;
         proxy2._other = proxy1;
@@ -55,12 +56,12 @@ internal sealed class Proxy
 
         try
         {
-            while (true)
+            while (!ct.IsCancellationRequested)
             {
                 SocketReceiveResult rcv;
                 try
                 {
-                    rcv = await _socket.ReceiveAsync(rent, ct).ConfigureAwait(false);
+                    rcv = await _socket.Receive(rent, ct);
                 }
                 catch when (!ct.IsCancellationRequested)
                 {
@@ -73,7 +74,7 @@ internal sealed class Proxy
                     SocketError sendError;
                     try
                     {
-                        sendError = await _other._socket.SendAsync(rent.AsMemory(..rcv.BytesReceived), ct).ConfigureAwait(false);
+                        sendError = await _other._socket.Send(rent.AsMemory(..rcv.BytesReceived), ct);
                     }
                     catch when (!ct.IsCancellationRequested)
                     {
@@ -93,8 +94,7 @@ internal sealed class Proxy
                     if (rcv.BytesReceived == 0 && rcv.ErrorCode == SocketError.Success)
                     // Грациозное закрытие —> инициатором закрытия была удалённая сторона tcp.
                     {
-                        Debug.WriteLine($"ConId {ConnectionId} ShutdownSend");
-
+                        //Debug.WriteLine($"ConId {ConnectionId} ShutdownSend");
                         _other.ShutdownSend(); // Делаем грациозное закрытие.
                         return;
                     }
@@ -184,8 +184,7 @@ internal sealed class Proxy
         }
         catch { }
 
-        Debug.WriteLine($"ConId {ConnectionId} Disconnect");
-
+        //Debug.WriteLine($"ConId {ConnectionId} Disconnect");
         SetDisconnectFlag();
     }
 

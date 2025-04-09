@@ -1,5 +1,5 @@
-﻿using System.Net;
-using System.Net.Sockets;
+﻿using System.Net.Sockets;
+using DanilovSoft.Socks5Server.TcpSocket;
 
 internal static class ExtensionMethods
 {
@@ -14,7 +14,7 @@ internal static class ExtensionMethods
         var count = buffer.Length;
         while (buffer.Length > 0)
         {
-            var task = managedTcp.ReceiveAsync(buffer, cancellationToken);
+            var task = managedTcp.Receive(buffer, cancellationToken);
             if (task.IsCompletedSuccessfully)
             {
                 var result = task.Result;

@@ -1,8 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
+using DanilovSoft.Socks5Server.TcpSocket;
 
 namespace DanilovSoft.Socks5Server;
 
@@ -35,7 +35,7 @@ internal readonly struct Socks5LoginPassword : IEquatable<Socks5LoginPassword>
     {
         Debug.Assert(buffer.Length >= MaximumSize);
 
-        var rcvResult = await managedTcp.ReceiveAsync(buffer).ConfigureAwait(false);
+        var rcvResult = await managedTcp.Receive(buffer).ConfigureAwait(false);
         if (!rcvResult.ReceiveSuccess)
         {
             return default;

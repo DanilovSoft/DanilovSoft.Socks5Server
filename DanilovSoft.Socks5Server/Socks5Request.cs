@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
+using DanilovSoft.Socks5Server.TcpSocket;
 
 namespace DanilovSoft.Socks5Server;
 
@@ -81,7 +82,7 @@ internal readonly struct Socks5Request : IEquatable<Socks5Request>
             case AddressType.DomainName:
                 {
                     // 1 байт с длиной строки.
-                    rcvResult = await managedTcp.ReceiveAsync(buffer[..1], ct).ConfigureAwait(false);
+                    rcvResult = await managedTcp.Receive(buffer[..1], ct).ConfigureAwait(false);
                     if (!rcvResult.ReceiveSuccess)
                     {
                         return default;

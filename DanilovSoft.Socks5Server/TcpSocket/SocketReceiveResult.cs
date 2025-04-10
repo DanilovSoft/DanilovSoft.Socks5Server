@@ -9,8 +9,8 @@ namespace DanilovSoft.Socks5Server.TcpSocket;
 /// Count может быть больше 0 несмотря на то что SocketError != Success.
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
-[DebuggerDisplay(@"\{BytesReceived = {BytesReceived}, ErrorCode = {ErrorCode}\}")]
 [method: DebuggerStepThrough]
+[DebuggerDisplay($"{{{nameof(GetDebuggerDisplay)}(),nq}}")]
 internal readonly struct SocketReceiveResult(int count, SocketError errorCode)
 {
     public readonly int BytesReceived = count;
@@ -20,4 +20,9 @@ internal readonly struct SocketReceiveResult(int count, SocketError errorCode)
     /// Когда BytesReceived > 0 И ErrorCode.Success.
     /// </summary>
     public bool ReceiveSuccess => BytesReceived > 0 && ErrorCode == SocketError.Success;
+
+    private string GetDebuggerDisplay()
+    {
+        return $"{{ BytesReceived = {BytesReceived}, ErrorCode = {ErrorCode} }}";
+    }
 }

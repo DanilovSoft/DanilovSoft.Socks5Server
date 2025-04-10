@@ -3,13 +3,13 @@ using System.Net.Sockets;
 
 namespace DanilovSoft.Socks5Server;
 
-public sealed class Socks5Listener : IDisposable
+public sealed class Socks5Server : IDisposable
 {
     private readonly TaskCompletionSource _shutdownTask = new();
     private readonly TcpListener _tcpListener;
     private int _activeConnectionsCount;
 
-    public Socks5Listener(int listenPort = 0)
+    public Socks5Server(int listenPort = 0)
     {
         TcpListener? tcpListener = null;
         try
@@ -26,26 +26,28 @@ public sealed class Socks5Listener : IDisposable
     }
 
     public int Port { get; }
+    public int ActiveConnections => Volatile.Read(ref _activeConnectionsCount);
 
     public void Dispose()
     {
         _tcpListener.Dispose();
     }
 
-    public async Task ListenAsync(CancellationToken ct = default)
+    public async Task<bool> RunAsync(CancellationToken ct = default)
     {
+        bool stoppedGracefully = true;
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                TcpClient connectedSocket;
+                Socket connectedSocket;
                 try
                 {
-                    connectedSocket = await _tcpListener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
+                    connectedSocket = await _tcpListener.AcceptSocketAsync(ct).ConfigureAwait(false);
                 }
-                catch (ObjectDisposedException) when (ct.IsCancellationRequested) // Нормальная остановка с помощью токена.
+                catch (OperationCanceledException)
                 {
-                    throw new OperationCanceledException($"{nameof(Socks5Listener)} успешно остановлен по запросу пользователя", ct);
+                    break;
                 }
 
                 Interlocked.Increment(ref _activeConnectionsCount);
@@ -58,23 +60,30 @@ public sealed class Socks5Listener : IDisposable
         }
         finally
         {
-            // Даём немного времени на завершение всех активных соединений.
-            await _shutdownTask.Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+            if (Volatile.Read(ref _activeConnectionsCount) > 0)
+            {
+                // Даём немного времени на завершение всех активных соединений.
+                var penaltyTask = _shutdownTask.Task.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+                await penaltyTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                stoppedGracefully = penaltyTask.IsCompletedSuccessfully;
+            }
         }
+
+        return stoppedGracefully;
     }
 
-    private async void ProcessConnection(TcpClient connectedSocket, CancellationToken ct)
+    private async void ProcessConnection(Socket connectedSocket, CancellationToken ct)
     {
-        using var connection = new Socks5Connection(connectedSocket);
-        
-        await connection.ProcessRequestsAsync(ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        using var connection = new SocksConnection(connectedSocket);
+
+        await connection.ProcessConnection(ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
         DecrementConnectionsCount(ct);
     }
 
     private void DecrementConnectionsCount(CancellationToken ct)
     {
-        if (Interlocked.Decrement(ref _activeConnectionsCount) == 1 && ct.IsCancellationRequested)
+        if (Interlocked.Decrement(ref _activeConnectionsCount) == 0 && ct.IsCancellationRequested)
         {
             _shutdownTask.TrySetResult();
         }

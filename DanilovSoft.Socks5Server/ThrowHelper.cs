@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace DanilovSoft.Socks5Server;
 
@@ -28,12 +29,12 @@ internal static class ThrowHelper
         throw new ArgumentOutOfRangeException(paramName, message);
     }
 
-    /// <exception cref="ArgumentNullException"/>
-    [DoesNotReturn]
-    internal static void ThrowArgumentNullException(string? paramName)
-    {
-        throw new ArgumentNullException(paramName);
-    }
+    ///// <exception cref="ArgumentNullException"/>
+    //[DoesNotReturn]
+    //internal static void ThrowArgumentNullException(string? paramName)
+    //{
+    //    throw new ArgumentNullException(paramName);
+    //}
 
     /// <exception cref="InvalidOperationException"/>
     [DoesNotReturn]
@@ -44,9 +45,16 @@ internal static class ThrowHelper
 
     /// <exception cref="NotSupportedException"/>
     [DoesNotReturn]
-    internal static void ThrowNotSupportedException(string message)
+    public static void ThrowNotSupportedException(string? message)
     {
         throw new NotSupportedException(message);
+    }
+
+    /// <exception cref="NotSupportedException"/>
+    [DoesNotReturn]
+    public static T ThrowNotSupportedException<T>()
+    {
+        throw new NotSupportedException();
     }
 
     /// <exception cref="ObjectDisposedException"/>
@@ -59,5 +67,17 @@ internal static class ThrowHelper
     internal static ObjectDisposedException ObjectDisposedException(string? objectName)
     {
         return new ObjectDisposedException(objectName);
+    }
+
+    [DoesNotReturn]
+    public static void InvalidSocks5Version(byte version)
+    {
+        throw new InvalidOperationException($"Не верный номер версии. Получено {version}, ожидалось 1");
+    }
+
+    [DoesNotReturn]
+    public static void ThrowUnreachable()
+    {
+        throw new UnreachableException();
     }
 }

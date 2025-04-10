@@ -1,8 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
-using DanilovSoft.Socks5Server.TcpSocket;
 
 namespace DanilovSoft.Socks5Server;
 
@@ -15,49 +15,11 @@ namespace DanilovSoft.Socks5Server;
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
 [DebuggerDisplay(@"\{default = {this == default}\}")]
-internal readonly struct Socks5LoginPassword : IEquatable<Socks5LoginPassword>
+internal readonly struct Socks5LoginPassword(string login, string password) : IEquatable<Socks5LoginPassword>
 {
-    public const int MaximumSize = 513;
-
-    private readonly bool _isInitialized;
-    public readonly string? Login;
-    public readonly string? Password;
-
-    // ctor
-    private Socks5LoginPassword(string login, string password)
-    {
-        Login = login;
-        Password = password;
-        _isInitialized = true;
-    }
-
-    public static async Task<Socks5LoginPassword> ReceiveAsync(ManagedTcpSocket managedTcp, Memory<byte> buffer)
-    {
-        Debug.Assert(buffer.Length >= MaximumSize);
-
-        var rcvResult = await managedTcp.Receive(buffer).ConfigureAwait(false);
-        if (!rcvResult.ReceiveSuccess)
-        {
-            return default;
-        }
-
-        var version = buffer.Span[0];
-        if (version != 1)
-        {
-            throw new InvalidOperationException($"Не верный номер версии. Получено {version}, ожидалось 1");
-        }
-
-        var ulen = buffer.Span[1];
-        buffer = buffer.Slice(2);
-
-        var login = Encoding.UTF8.GetString(buffer.Slice(0, ulen).Span);
-
-        buffer = buffer.Slice(ulen);
-        var plen = buffer.Span[0];
-        var password = Encoding.UTF8.GetString(buffer.Slice(1, plen).Span);
-
-        return new Socks5LoginPassword(login, password);
-    }
+    private readonly bool _isInitialized = true;
+    public readonly string? Login = login;
+    public readonly string? Password = password;
 
     public bool Equals([AllowNull] Socks5LoginPassword other)
     {

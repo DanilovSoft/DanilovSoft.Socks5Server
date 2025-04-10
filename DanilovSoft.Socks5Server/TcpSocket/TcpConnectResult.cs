@@ -1,23 +1,27 @@
-﻿using System.Net.Sockets;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
-using DanilovSoft.Socks5Server.TcpSocket;
 
-namespace DanilovSoft.Socks5Server;
+namespace DanilovSoft.Socks5Server.TcpSocket;
 
 [StructLayout(LayoutKind.Auto)]
-internal readonly struct TcpConnectResult : IDisposable
+[DebuggerDisplay($"{{{nameof(GetDebuggerDisplay)}(),nq}}")]
+internal readonly struct TcpConnectResult(SocketError socketError, Socket? socket) : IDisposable
 {
-    public TcpConnectResult(SocketError socketError, ManagedTcpSocket? socket)
-    {
-        SocketError = socketError;
-        Socket = socket;
-    }
+    public SocketError SocketError { get; } = socketError;
+    public Socket? Socket { get; } = socket;
 
-    public SocketError SocketError { get; }
-    public ManagedTcpSocket? Socket { get; }
+    [MemberNotNullWhen(true, nameof(Socket))]
+    public bool IsConnected => Socket != null;
 
     public void Dispose()
     {
         Socket?.Dispose();
+    }
+
+    private string GetDebuggerDisplay()
+    {
+        return $"{GetType().Name} {{ SocketError = {SocketError} }}";
     }
 }

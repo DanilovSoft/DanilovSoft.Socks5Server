@@ -1,6 +1,8 @@
 ﻿using System.Net.Sockets;
 using DanilovSoft.Socks5Server.TcpSocket;
 
+namespace DanilovSoft.Socks5Server.Extensions;
+
 internal static class ExtensionMethods
 {
     /// <exception cref="SocketException"/>
@@ -9,12 +11,13 @@ internal static class ExtensionMethods
         return new SocketException((int)socketError);
     }
 
-    public static ValueTask<SocketReceiveResult> ReceiveExactAsync(this ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken cancellationToken = default)
+    public static ValueTask<SocketReceiveResult> ReceiveExactAsync(this Socket socket, Memory<byte> buffer, CancellationToken ct = default)
     {
         var count = buffer.Length;
         while (buffer.Length > 0)
         {
-            var task = managedTcp.Receive(buffer, cancellationToken);
+            ValueTask<SocketReceiveResult> task = socket.Receive2(buffer, ct);
+
             if (task.IsCompletedSuccessfully)
             {
                 var result = task.Result;
@@ -31,17 +34,17 @@ internal static class ExtensionMethods
             }
             else
             {
-                return WaitForReceiveBlockAsync(task, count, managedTcp, buffer, cancellationToken);
+                return Wait(task, count, socket, buffer, ct);
             }
         }
 
         // Всё выполнено синхронно.
         return new ValueTask<SocketReceiveResult>(new SocketReceiveResult(count, SocketError.Success));
 
-        static async ValueTask<SocketReceiveResult> WaitForReceiveBlockAsync(ValueTask<SocketReceiveResult> task, int count, 
-            ManagedTcpSocket managedTcp, Memory<byte> buffer, CancellationToken ct)
+        static async ValueTask<SocketReceiveResult> Wait(ValueTask<SocketReceiveResult> task, int count, 
+            Socket socket, Memory<byte> buffer, CancellationToken ct)
         {
-            var result = await task.ConfigureAwait(false);
+            var result = await task;
 
             if (result.BytesReceived > 0 && result.ErrorCode == SocketError.Success)
             {
@@ -55,7 +58,7 @@ internal static class ExtensionMethods
                 else
                 // Прочитали всё что необходимо.
                 {
-                    return await ReceiveExactAsync(managedTcp, buffer, ct).ConfigureAwait(false);
+                    return await ReceiveExactAsync(socket, buffer, ct);
                 }
             }
             else

@@ -24,18 +24,9 @@ class Program
 
         int port = configuration.GetValue<int>("Port");
 
-        CancellationTokenSource cts = new();
-        CancellationToken cancellationToken = cts.Token;
-        Console.CancelKeyPress += (_, e) =>
-        {
-            Console.WriteLine("Canceling...");
-            cts.Cancel();
-            e.Cancel = true;
-        };
-
         try
         {
-            await ListenAsync(port, cancellationToken);
+            await RunServer(port);
         }
         catch (OperationCanceledException)
         {
@@ -43,11 +34,29 @@ class Program
         }
     }
 
-    private static async Task ListenAsync(int port, CancellationToken ct)
+    private static async Task RunServer(int port)
     {
-        using var listener = new Socks5Listener(port);
-        Console.WriteLine($"Listening port {listener.Port}");
+        using var server = new Socks5Server(port);
+        Console.WriteLine($"Listening port {server.Port}");
 
-        await listener.ListenAsync(ct);
+        CancellationTokenSource cts = new();
+        CancellationToken cancellationToken = cts.Token;
+        Console.CancelKeyPress += (_, e) =>
+        {
+            if (server.ActiveConnections is { } connections && connections > 0)
+            {
+                Console.WriteLine($"Closing {connections} connections...");
+            }
+            else
+            {
+                Console.WriteLine("Stopping...");
+            }
+            cts.Cancel();
+            e.Cancel = true;
+        };
+
+        bool stoppedGracefully = await server.RunAsync(cancellationToken);
+
+        Console.WriteLine(stoppedGracefully ? "Stopped gracefully!" : "Stopped abnormally");
     }
 }

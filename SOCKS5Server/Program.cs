@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 
 namespace DanilovSoft.Socks5Server;
 
@@ -39,6 +40,7 @@ class Program
         bool sigIntReceived = false;
 
         using var server = new Socks5Server(port);
+        Console.WriteLine($"SOCKS5 v{typeof(Socks5Server).Assembly.GetName().Version?.ToString(3) ?? "1.0.0"}");
         Console.WriteLine($"Listening port {server.Port}");
 
         CancellationTokenSource cts = new();

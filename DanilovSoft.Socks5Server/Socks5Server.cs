@@ -63,7 +63,8 @@ public sealed class Socks5Server : IDisposable
             if (Volatile.Read(ref _activeConnectionsCount) > 0)
             {
                 // Даём немного времени на завершение всех активных соединений.
-                var penaltyTask = _shutdownTask.Task.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+                // NOTE докер ждёт 10 сек
+                var penaltyTask = _shutdownTask.Task.WaitAsync(TimeSpan.FromSeconds(7), CancellationToken.None);
                 await penaltyTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
                 stoppedGracefully = penaltyTask.IsCompletedSuccessfully;
             }

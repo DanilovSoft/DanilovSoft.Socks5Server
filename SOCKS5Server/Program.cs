@@ -36,6 +36,8 @@ class Program
 
     private static async Task RunServer(int port)
     {
+        bool sigIntReceived = false;
+
         using var server = new Socks5Server(port);
         Console.WriteLine($"Listening port {server.Port}");
 
@@ -43,20 +45,40 @@ class Program
         CancellationToken cancellationToken = cts.Token;
         Console.CancelKeyPress += (_, e) =>
         {
-            if (server.ActiveConnections is { } connections && connections > 0)
-            {
-                Console.WriteLine($"Closing {connections} connections...");
-            }
-            else
-            {
-                Console.WriteLine("Stopping...");
-            }
+            Console.WriteLine("Received SIGINT (Ctrl+C)");
+
+            LogStopping(server);
             cts.Cancel();
+
             e.Cancel = true;
+            sigIntReceived = true;
+        };
+
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            if (!sigIntReceived)
+            {
+                Console.WriteLine("Received SIGTERM");
+
+                LogStopping(server);
+                cts.Cancel();
+            }
         };
 
         bool stoppedGracefully = await server.RunAsync(cancellationToken);
 
         Console.WriteLine(stoppedGracefully ? "Stopped gracefully!" : "Stopped abnormally");
+    }
+
+    private static void LogStopping(Socks5Server server)
+    {
+        if (server.ActiveConnections is { } connections && connections > 0)
+        {
+            Console.WriteLine($"Closing {connections} connections...");
+        }
+        else
+        {
+            Console.WriteLine("Stopping...");
+        }
     }
 }

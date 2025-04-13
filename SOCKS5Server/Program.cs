@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.Loader;
 
 namespace DanilovSoft.Socks5Server;
 
@@ -49,27 +50,27 @@ class Program
         {
             Console.WriteLine("Received SIGINT (Ctrl+C)");
 
-            LogStopping(server);
             cts.Cancel();
+            LogStopping(server);
 
             e.Cancel = true;
             sigIntReceived = true;
         };
 
-        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        AssemblyLoadContext.Default.Unloading += (_) =>
         {
             if (!sigIntReceived)
             {
                 Console.WriteLine("Received SIGTERM");
 
-                LogStopping(server);
                 cts.Cancel();
+                LogStopping(server);
             }
         };
 
         bool stoppedGracefully = await server.RunAsync(cancellationToken);
 
-        Console.WriteLine(stoppedGracefully ? "Stopped gracefully!" : "Stopped abnormally");
+        Console.WriteLine(stoppedGracefully ? "Process stopped gracefully!" : "Process stopped abnormally");
     }
 
     private static void LogStopping(Socks5Server server)

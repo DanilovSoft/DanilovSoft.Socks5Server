@@ -1,7 +1,5 @@
-﻿using System.Buffers;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net.Sockets;
-using DanilovSoft.Socks5Server.Extensions;
 using DanilovSoft.Socks5Server.TcpSocket;
 
 namespace DanilovSoft.Socks5Server;
@@ -41,10 +39,8 @@ internal sealed class Proxy(Socket socket, CancellationToken cancellationToken)
     {
         Debug.Assert(_otherDest != null);
 
-        // Арендуем память на длительное время(!).
-        // TO TNINK возможно лучше создать свой пул что-бы не истощить общий 
-        // в случае когда мы не одни его используем.
-        var pool = ArrayPool<byte>.Shared;
+        // арендуем память на длительное время
+        var pool = MyArrayPool.Shared;
         byte[] rent = pool.Rent(ProxyBufferSize);
 
         try

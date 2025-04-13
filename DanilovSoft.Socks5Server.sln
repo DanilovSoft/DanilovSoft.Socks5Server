@@ -14,8 +14,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SOCKS5Server.App", "SOCKS5Server\SOCKS5Server.App.csproj", "{2159C37D-06D4-45A6-8B63-795D098FAA0B}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{C98E22AE-42D3-4EC6-A5BF-482FA3024F49}"
-EndProject
 Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "docker-compose.dcproj", "{64B42578-BAB9-477E-B549-B62E3DFE5FE7}"
 EndProject
 Global

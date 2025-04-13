@@ -15,7 +15,7 @@ internal sealed class SocksConnection(Socket connectedSocket) : IDisposable
     /// </summary>
     public async Task ProcessConnection(CancellationToken ct = default)
     {
-        var pool = ArrayPool<byte>.Shared;
+        var pool = MyArrayPool.Shared;
         byte[]? buffer = pool.Rent(4096);
         try
         {
@@ -97,8 +97,7 @@ internal sealed class SocksConnection(Socket connectedSocket) : IDisposable
                                 return; // Обрыв.
                             }
 
-                            pool.Return(buffer, clearArray: false);
-                            buffer = null;
+                            pool.Return(Exchange(ref buffer, null), clearArray: false);
 
                             await Proxy.RunAsync(connectedSocket, connectTcpResult.Socket, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 

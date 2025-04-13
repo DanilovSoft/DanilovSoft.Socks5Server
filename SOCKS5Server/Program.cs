@@ -1,6 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
 using System.Runtime.Loader;
 
 namespace DanilovSoft.Socks5Server;
@@ -40,8 +39,8 @@ class Program
     {
         bool sigIntReceived = false;
 
-        using var server = new Socks5Server(port);
-        Console.WriteLine($"SOCKS5 v{typeof(Socks5Server).Assembly.GetName().Version?.ToString(3) ?? "1.0.0"}");
+        using var server = new SocksServer(port);
+        Console.WriteLine($"SOCKS5 v{typeof(SocksServer).Assembly.GetName().Version?.ToString(3) ?? "1.0.0"}");
         Console.WriteLine($"Listening port {server.Port}");
 
         CancellationTokenSource cts = new();
@@ -57,7 +56,7 @@ class Program
             sigIntReceived = true;
         };
 
-        AssemblyLoadContext.Default.Unloading += (_) =>
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
         {
             if (!sigIntReceived)
             {
@@ -73,7 +72,7 @@ class Program
         Console.WriteLine(stoppedGracefully ? "Process stopped gracefully!" : "Process stopped abnormally");
     }
 
-    private static void LogStopping(Socks5Server server)
+    private static void LogStopping(SocksServer server)
     {
         if (server.ActiveConnections is { } connections && connections > 0)
         {

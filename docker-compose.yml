@@ -1,22 +1,22 @@
 services:
-  proxy1:
+  socksProxy1:
     build:
       context: ${GIT_REPO}  # смотри файл .env
       dockerfile: SOCKS5Server/Dockerfile
     image: socks5
-    container_name: socks5proxy1
+    container_name: socksProxy1
     restart: unless-stopped
     networks:
       macvlan_net:
         ipv4_address: 10.0.0.151  # через DHCP, простым способом получить нельзя
         mac_address: 02:42:0a:00:00:01
     
-  proxy2:
+  socksProxy2:
     build:
       context: ${GIT_REPO}
       dockerfile: SOCKS5Server/Dockerfile
     image: socks5
-    container_name: socks5proxy2
+    container_name: socksProxy2
     restart: unless-stopped
     networks:
       macvlan_net:

@@ -3,13 +3,13 @@ using System.Net.Sockets;
 
 namespace DanilovSoft.Socks5Server;
 
-public sealed class Socks5Server : IDisposable
+public sealed class SocksServer : IDisposable
 {
     private readonly TaskCompletionSource _shutdownTask = new();
     private readonly TcpListener _tcpListener;
     private int _activeConnectionsCount;
 
-    public Socks5Server(int listenPort = 0)
+    public SocksServer(int listenPort = 0)
     {
         TcpListener? tcpListener = null;
         try

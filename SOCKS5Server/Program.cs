@@ -1,86 +1,36 @@
 ﻿using Microsoft.Extensions.Configuration;
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.Loader;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace DanilovSoft.Socks5Server;
 
 class Program
 {
-    [RequiresUnreferencedCode("Calls Microsoft.Extensions.Configuration.ConfigurationBinder.GetValue<T>(String)")]
-    private static async Task Main(string[] args)
+    private static Task Main()
     {
-        ConfigurationBuilder config = new();
-
-        var baseDir = Directory.GetParent(AppContext.BaseDirectory);
-        if (baseDir != null)
-        {
-            config.SetBasePath(baseDir.FullName);
-        }
-
-        var configuration = config
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
-            .AddEnvironmentVariables()
-            .AddCommandLine(args)
+        var host = new HostBuilder()
+            .UseConsoleLifetime()
+            .ConfigureAppConfiguration((context, configurationBuilder) =>
+            {
+                configurationBuilder
+                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
+            })
+            .ConfigureLogging((hostBuilder, loggingBuilder) => 
+            {
+                loggingBuilder.AddConfiguration(hostBuilder.Configuration.GetSection("Logging"));
+                loggingBuilder.AddSimpleConsole(c => 
+                {
+                    c.SingleLine = true;
+                    c.IncludeScopes = false;
+                });
+            })
+            .ConfigureServices((context, services) =>
+            {
+                services.AddHostedService<SocksBackgroundService>();
+            })
             .Build();
 
-        int port = configuration.GetValue<int>("Port");
-
-        try
-        {
-            await RunServer(port);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-    }
-
-    private static async Task RunServer(int port)
-    {
-        bool sigIntReceived = false;
-
-        using var server = new SocksServer(port);
-        Console.WriteLine($"SOCKS5 v{typeof(SocksServer).Assembly.GetName().Version?.ToString(3) ?? "1.0.0"}");
-        Console.WriteLine($"Listening port {server.Port}");
-
-        CancellationTokenSource cts = new();
-        CancellationToken cancellationToken = cts.Token;
-        Console.CancelKeyPress += (_, e) =>
-        {
-            Console.WriteLine("Received SIGINT (Ctrl+C)");
-
-            cts.Cancel();
-            LogStopping(server);
-
-            e.Cancel = true;
-            sigIntReceived = true;
-        };
-
-        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-        {
-            if (!sigIntReceived)
-            {
-                Console.WriteLine("Received SIGTERM");
-
-                cts.Cancel();
-                LogStopping(server);
-            }
-        };
-
-        bool stoppedGracefully = await server.RunAsync(cancellationToken);
-
-        Console.WriteLine(stoppedGracefully ? "Process stopped gracefully!" : "Process stopped abnormally");
-    }
-
-    private static void LogStopping(SocksServer server)
-    {
-        if (server.ActiveConnections is { } connections && connections > 0)
-        {
-            Console.WriteLine($"Closing {connections} connections...");
-        }
-        else
-        {
-            Console.WriteLine("Stopping...");
-        }
+        return host.RunAsync();
     }
 }

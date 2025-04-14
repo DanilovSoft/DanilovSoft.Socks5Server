@@ -6,7 +6,7 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
-		<Version>1.0.3</Version>
+		<Version>1.0.4</Version>
 		<Platforms>AnyCPU;x64;x86</Platforms>
 	</PropertyGroup>
 

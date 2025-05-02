@@ -8,7 +8,7 @@ internal sealed class SocksBackgroundService(ILogger<SocksBackgroundService> log
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        int port = int.Parse(configuration.GetSection("Port").Value!);
+        int port = int.Parse(configuration.GetSection("Port").Value ?? "0");
 
         return RunServer(port, stoppingToken);
     }

@@ -5,7 +5,7 @@ namespace DanilovSoft.Socks5Server;
 
 public sealed class SocksServer : IDisposable
 {
-    private readonly TaskCompletionSource _shutdownTask = new();
+    private readonly TaskCompletionSource _shutdownSignal = new();
     private readonly TcpListener _tcpListener;
     private int _activeConnectionsCount;
 
@@ -64,7 +64,7 @@ public sealed class SocksServer : IDisposable
             {
                 // Даём немного времени на завершение всех активных соединений.
                 // NOTE докер ждёт 10 сек
-                var penaltyTask = _shutdownTask.Task.WaitAsync(TimeSpan.FromSeconds(7), CancellationToken.None);
+                var penaltyTask = _shutdownSignal.Task.WaitAsync(TimeSpan.FromSeconds(7), CancellationToken.None);
                 await penaltyTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
                 stoppedGracefully = penaltyTask.IsCompletedSuccessfully;
             }
@@ -86,7 +86,7 @@ public sealed class SocksServer : IDisposable
     {
         if (Interlocked.Decrement(ref _activeConnectionsCount) == 0 && ct.IsCancellationRequested)
         {
-            _shutdownTask.TrySetResult();
+            _shutdownSignal.TrySetResult();
         }
     }
 }

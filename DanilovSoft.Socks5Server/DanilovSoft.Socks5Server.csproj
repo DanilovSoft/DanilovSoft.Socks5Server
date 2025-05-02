@@ -2,12 +2,13 @@
 
 	<PropertyGroup>
 		<TargetFramework>net9.0</TargetFramework>
-		<PublishAot>true</PublishAot>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<AnalysisMode>AllEnabledByDefault</AnalysisMode>
-		<Version>1.0.4</Version>
-		<Platforms>AnyCPU;x64;x86</Platforms>
+		<Version>1.0.5</Version>
+		<Platforms>x64</Platforms>
+		<IsAotCompatible>true</IsAotCompatible>
+		<InvariantGlobalization>true</InvariantGlobalization>
 	</PropertyGroup>
 
 	<ItemGroup>

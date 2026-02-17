@@ -16,7 +16,6 @@ internal sealed class Proxy(Socket socket, CancellationToken cancellationToken)
     private volatile bool _shutdownReceive;
     private volatile bool _closed;
     private volatile bool _disconnect;
-
 #endif
 
     public static Task RunAsync(Socket socketA, Socket socketB, CancellationToken ct = default)

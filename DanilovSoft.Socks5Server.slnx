@@ -1,0 +1,22 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="build_image.bat" />
+    <File Path="ReadMe.txt" />
+  </Folder>
+  <Project Path="DanilovSoft.Socks5Server/DanilovSoft.Socks5Server.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="Release|Any CPU" Project="x64" />
+  </Project>
+  <Project Path="docker-compose.dcproj">
+    <Platform Project="AnyCPU" />
+    <Build />
+  </Project>
+  <Project Path="SOCKS5Server/SOCKS5Server.App.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+</Solution>

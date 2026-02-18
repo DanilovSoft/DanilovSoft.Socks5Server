@@ -10,12 +10,13 @@
 		<Platforms>x64</Platforms>
 		
 		<PublishAot>true</PublishAot>
+		<VerifyReferenceAotCompatibility>true</VerifyReferenceAotCompatibility>
 		<PublishTrimmed>true</PublishTrimmed>
 
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<UseSystemResourceKeys>true</UseSystemResourceKeys>
 
-		<IlcOptimizationPreference>Size</IlcOptimizationPreference>
+		<OptimizationPreference>Size</OptimizationPreference>
 		<IlcGenerateStackTraceData>false</IlcGenerateStackTraceData>
 
 		<DebuggerSupport>false</DebuggerSupport>
